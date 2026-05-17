@@ -9,9 +9,6 @@
 3、菜单与脚本版本号更新为 ver1.04-c
 ```
 
-有问题，或者想交流使用经验，欢迎加入 TG 群：
-[![Telegram](https://img.shields.io/badge/Telegram-HiHysteria-26A5E4?style=for-the-badge&logo=telegram&logoColor=white)](https://hihysteria.t.me)
-
 [历史改进](md/logs.md)
 
 ## 一·简介
