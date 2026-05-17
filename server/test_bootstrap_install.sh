@@ -137,19 +137,7 @@ test_download_fails_cleanly_without_download_client() {
     assert_equals "absent" "$([ -e "$HIHY_BIN_LINK" ] && echo present || echo absent)" "failed downloads should not leave a bootstrap script behind"
 }
 
-test_resolve_hysteria_version_mapping() {
-    assert_equals "hysteria2" "$(resolveHysteriaVersion "1")" "option 1 should resolve to hysteria2"
-    assert_equals "hysteria2" "$(resolveHysteriaVersion "")" "empty selection should default to hysteria2"
-    assert_equals "hysteria1" "$(resolveHysteriaVersion "2")" "option 2 should resolve to hysteria1"
-
-    if resolveHysteriaVersion "3" >/dev/null 2>&1; then
-        printf 'ASSERT FAILED: invalid selections should fail validation\n' >&2
-        exit 1
-    fi
-}
-
 test_download_uses_curl_when_wget_is_missing
 test_download_fails_cleanly_without_download_client
-test_resolve_hysteria_version_mapping
 
 printf 'All bootstrap installer tests passed.\n'

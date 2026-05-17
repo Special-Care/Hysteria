@@ -6,11 +6,8 @@ HIHY_BIN_LINK="${HIHY_BIN_LINK:-/usr/bin/hihy}"
 HIHY_YQ_BIN="${HIHY_YQ_BIN:-/usr/bin/yq}"
 HIHY_PID_FILE="${HIHY_PID_FILE:-/var/run/hihy.pid}"
 HIHY_RC_LOCAL="${HIHY_RC_LOCAL:-/etc/rc.local}"
-# HIHY_REMOTE_SCRIPT_URL="${HIHY_REMOTE_SCRIPT_URL:-https://raw.githubusercontent.com/emptysuns/Hi_Hysteria/refs/heads/main/server/hy2.sh}"
-# HIHY_REMOTE_SCRIPT_MIRROR_URL="${HIHY_REMOTE_SCRIPT_MIRROR_URL:-https://cdn.jsdelivr.net/gh/emptysuns/Hi_Hysteria@main/server/hy2.sh}"
-
-HIHY_REMOTE_SCRIPT_URL="${HIHY_REMOTE_SCRIPT_URL:-https://raw.githubusercontent.com/Special-Care/Hi_Hysteria/refs/heads/main/server/hy2.sh}"
-HIHY_REMOTE_SCRIPT_MIRROR_URL="${HIHY_REMOTE_SCRIPT_MIRROR_URL:-https://cdn.jsdelivr.net/gh/Special-Care/Hi_Hysteria@main/server/hy2.sh}"
+HIHY_REMOTE_SCRIPT_URL="${HIHY_REMOTE_SCRIPT_URL:-https://raw.githubusercontent.com/Special-Care/Hysteria/refs/heads/main/server/hy2.sh}"
+HIHY_REMOTE_SCRIPT_MIRROR_URL="${HIHY_REMOTE_SCRIPT_MIRROR_URL:-https://cdn.jsdelivr.net/gh/Special-Care/Hysteria@main/server/hy2.sh}"
 HIHY_VERSION_STATUS_FILE="${HIHY_VERSION_STATUS_FILE:-$HIHY_ROOT_DIR/result/version-check.state}"
 HIHY_VERSION_CHECK_LOCK_FILE="${HIHY_VERSION_CHECK_LOCK_FILE:-$HIHY_ROOT_DIR/result/version-check.lock}"
 HIHY_VERSION_CHECK_TTL="${HIHY_VERSION_CHECK_TTL:-21600}"
@@ -267,7 +264,7 @@ displayCachedVersionNotifications() {
     core_remote=$(readVersionCheckValue "$HIHY_VERSION_STATUS_FILE" "core_remote")
 
     if [ "$hihy_status" = "update" ] && [ -n "$hihy_remote" ]; then
-        echoColor purple "[☺] hihy需更新,version:v${hihy_remote},建议更新并查看日志: https://github.com/Special-Care/Hi_Hysteria/"
+        echoColor purple "[☺] hihy需更新,version:v${hihy_remote},建议更新并查看日志: https://github.com/Special-Care/Hysteria/"
     fi
 
     if [ "$core_status" = "update" ] && [ -n "$core_remote" ]; then
@@ -1829,7 +1826,7 @@ downloadHysteriaCore(){
             download_url="${url_base}loong64"
             ;;
         *)
-            echoColor yellowBlack "Error[OS Message]:${arch}\nPlease open an issue at https://github.com/Special-Care/Hi_Hysteria/issues !"
+            echoColor yellowBlack "Error[OS Message]:${arch}\nPlease open an issue at https://github.com/Special-Care/Hysteria/issues !"
             exit 1
             ;;
     esac
@@ -3512,7 +3509,7 @@ show_menu() {
     clear
     echo -e " -------------------------------------------"
     echo -e "|**********      Hi Hysteria       **********|"
-    echo -e "|**********    Author: Special-Care   **********|"
+    echo -e "|**********    Author: specialcare **********|"
     echo -e "|**********     Version: $(echoColor red "${hihyV}")    **********|"
     echo -e " -------------------------------------------"
     echo -e "Tips: $(echoColor green "hihy") 命令再次运行本脚本."

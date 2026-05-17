@@ -14,8 +14,6 @@
 
 [历史改进](md/logs.md)
 
-[Hysteria V1版本](https://github.com/emptysuns/Hi_Hysteria/tree/v1)
-
 ## 一·简介
 
 > Hysteria2 是一个功能丰富的，专为恶劣网络环境进行优化的网络工具（双边加速），比如卫星网络、拥挤的公共 Wi-Fi、在**中国连接国外服务器**等。 基于修改版的 QUIC 协议。
@@ -66,7 +64,6 @@
 * 支持生成hysteria2 original client配置文件，保留最全的客户端参数
 * 使用高优先级启动hysteria2进程，保持速度优先
 * 端口跳跃与hysteria2的守护进程使用自启脚本管理，提供更强的拓展性与兼容性
-* 保留提供hysteria v1的安装脚本，供用户选择
 * 计算BDP（带宽延迟积）来调整quic参数，适应多种多样的需求场景
 * 支持添加socks5出站，包括自动添加warp出站功能
 * 支持lxc、openvz、kvm等现在的所有主流的虚拟化方式
@@ -96,8 +93,13 @@
 
 ```
 su - root #switch to root user.
-bash <(curl -fsSL https://git.io/hysteria.sh)
+bash <(curl -fsSL https://cdn.jsdelivr.net/gh/Special-Care/Hysteria@main/server/install.sh)
 ```
+
+> 如果 jsDelivr 拉取失败，可以改用 GitHub 源：
+> ```
+> bash <(curl -fsSL https://raw.githubusercontent.com/Special-Care/Hysteria/main/server/install.sh)
+> ```
 
 ### 配置过程
 
@@ -108,7 +110,7 @@ bash <(curl -fsSL https://git.io/hysteria.sh)
 ```
  -------------------------------------------
 |**********      Hi Hysteria       **********|
-|**********    Author: emptysuns   **********|
+|**********    Author: specialcare **********|
 |**********   Version: ver1.04-c   **********|
  -------------------------------------------
 Tips: hihy  命令再次运行本脚本.
