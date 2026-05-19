@@ -1,4 +1,7 @@
 #!/bin/bash
+# Sanitize PATH so we always resolve system binaries from trusted locations,
+# regardless of whatever environment the operator's shell was launched in.
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin${PATH:+:$PATH}"
 hihyV="ver1.04-c"
 
 HIHY_ROOT_DIR="${HIHY_ROOT_DIR:-/etc/hihy}"
@@ -13,6 +16,8 @@ HIHY_VERSION_CHECK_LOCK_FILE="${HIHY_VERSION_CHECK_LOCK_FILE:-$HIHY_ROOT_DIR/res
 HIHY_VERSION_CHECK_TTL="${HIHY_VERSION_CHECK_TTL:-21600}"
 HIHY_REMOTE_CONNECT_TIMEOUT="${HIHY_REMOTE_CONNECT_TIMEOUT:-2}"
 HIHY_REMOTE_MAX_TIME="${HIHY_REMOTE_MAX_TIME:-5}"
+HIHY_YQ_VERSION="${HIHY_YQ_VERSION:-v4.44.3}"
+HIHY_YQ_BASE_URL="${HIHY_YQ_BASE_URL:-https://github.com/mikefarah/yq/releases/download}"
 
 installHihyLauncher() {
     local source_path="${1:-${BASH_SOURCE[0]}}"
@@ -25,7 +30,7 @@ installHihyLauncher() {
     if [ -f "$source_path" ] && [ "$source_path" != "$bin_link" ]; then
         cp "$source_path" "$bin_link"
     elif [ ! -f "$bin_link" ]; then
-        wget -q -O "$bin_link" --no-check-certificate "$HIHY_REMOTE_SCRIPT_URL" 2>/dev/null
+        downloadToFile "$HIHY_REMOTE_SCRIPT_URL" "$bin_link" 2>/dev/null
     fi
 
     if [ -f "$bin_link" ]; then
@@ -51,7 +56,7 @@ downloadToFile() {
 
 startInstallValidationProcess() {
     local yaml_file="$1"
-    local debug_file="${2:-./hihy_debug.info}"
+    local debug_file="${2:-${HIHY_ROOT_DIR:-/etc/hihy}/result/hihy_debug.info}"
 
     env HYSTERIA_FIREWALL_BACKEND="iptables" /etc/hihy/bin/appS -c "$yaml_file" server > "$debug_file" 2>&1 &
 }
@@ -550,20 +555,92 @@ checkSystemForUpdate() {
     fi
 
     # 检查 yq 命令
-    # 安装 yq
+    # 安装 yq (固定版本 + sha256 校验)
     if ! command -v yq >/dev/null; then
         arch=$(getArchitecture)
-        echoColor purple "正在下载 yq (${arch})..."
-        if ! downloadToFile "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${arch}" "$HIHY_YQ_BIN"; then
-            if ! command -v wget >/dev/null 2>&1 && ! command -v curl >/dev/null 2>&1; then
-                echoColor red "下载 yq 失败：未找到 wget 或 curl"
-            else
-                echoColor red "下载 yq 失败：wget/curl 下载异常"
-            fi
+        if ! installPinnedYq "$arch" "$HIHY_YQ_BIN"; then
             exit 1
         fi
-        chmod +x "$HIHY_YQ_BIN"
     fi
+}
+
+# Compute sha256 of a file using whichever local tool is available.
+computeSha256() {
+    local file="$1"
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$file" 2>/dev/null | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$file" 2>/dev/null | awk '{print $1}'
+    elif command -v openssl >/dev/null 2>&1; then
+        openssl dgst -sha256 -r "$file" 2>/dev/null | awk '{print $1}'
+    else
+        return 1
+    fi
+}
+
+# Download yq at HIHY_YQ_VERSION and verify its SHA-256 against the matching
+# checksums file from the same release before installing it.
+installPinnedYq() {
+    local arch="$1"
+    local dest="$2"
+    local version="$HIHY_YQ_VERSION"
+    local binary_name="yq_linux_${arch}"
+    local base_url="${HIHY_YQ_BASE_URL%/}/${version}"
+    local tmp_bin tmp_sums actual_sha256 expected_sha256_list
+
+    echoColor purple "正在下载 yq ${version} (${arch})..."
+
+    tmp_bin=$(mktemp) || return 1
+    tmp_sums=$(mktemp) || { rm -f "$tmp_bin"; return 1; }
+
+    if ! downloadToFile "${base_url}/${binary_name}" "$tmp_bin"; then
+        rm -f "$tmp_bin" "$tmp_sums"
+        echoColor red "下载 yq 失败：wget/curl 下载异常"
+        return 1
+    fi
+    if [ ! -s "$tmp_bin" ]; then
+        rm -f "$tmp_bin" "$tmp_sums"
+        echoColor red "下载 yq 失败：返回内容为空"
+        return 1
+    fi
+
+    if ! downloadToFile "${base_url}/checksums" "$tmp_sums" || [ ! -s "$tmp_sums" ]; then
+        rm -f "$tmp_bin" "$tmp_sums"
+        echoColor red "下载 yq 校验文件失败"
+        return 1
+    fi
+
+    actual_sha256=$(computeSha256 "$tmp_bin")
+    if [ -z "$actual_sha256" ]; then
+        rm -f "$tmp_bin" "$tmp_sums"
+        echoColor red "无法计算 yq 的 SHA-256(系统缺少 sha256sum/shasum/openssl)"
+        return 1
+    fi
+
+    # yq publishes a checksums file where each row is:
+    #   <filename> <hash1> <hash2> ...
+    # The order of hash columns is described by checksums_hashes_order in the
+    # same release; rather than parse that, extract every 64-hex token on the
+    # matching line and accept a match against any of them. (Other hash widths
+    # like SHA-384/SHA-512 cannot collide with our 64-char SHA-256 value.)
+    expected_sha256_list=$(awk -v name="$binary_name" '$1 == name { for (i = 2; i <= NF; i++) print $i }' "$tmp_sums" | grep -Ei '^[0-9a-f]{64}$' | tr 'A-F' 'a-f')
+    if [ -z "$expected_sha256_list" ]; then
+        rm -f "$tmp_bin" "$tmp_sums"
+        echoColor red "yq 校验文件中未找到 ${binary_name} 的 SHA-256"
+        return 1
+    fi
+
+    if ! printf '%s\n' "$expected_sha256_list" | grep -Fxq "$actual_sha256"; then
+        rm -f "$tmp_bin" "$tmp_sums"
+        echoColor red "yq SHA-256 校验失败,中止安装(可能的 MITM 或仓库被篡改)"
+        return 1
+    fi
+
+    rm -f "$tmp_sums"
+    chmod +x "$tmp_bin" || { rm -f "$tmp_bin"; return 1; }
+    mv "$tmp_bin" "$dest" || { rm -f "$tmp_bin"; return 1; }
+    echoColor green "yq 已校验并安装到 ${dest}"
+    return 0
 }
 
 getPortBindMsg() {
@@ -782,6 +859,24 @@ recoverPartialInstallState() {
 }
 
 
+# Returns 0 if the argument is a numeric port in [1, 65535].
+isValidPort() {
+    local p="$1"
+    [[ "$p" =~ ^[0-9]+$ ]] || return 1
+    [ "$p" -ge 1 ] && [ "$p" -le 65535 ]
+}
+
+# Validate a DNS hostname (RFC 1035 syntax, length <= 253, labels <= 63).
+# Returns 0 if valid, non-zero otherwise. Used to refuse shell/openssl-unsafe
+# values before they are interpolated into cert generation or YAML config.
+isValidDomain() {
+    local d="$1"
+    [ -z "$d" ] && return 1
+    [ "${#d}" -gt 253 ] && return 1
+    [[ "$d" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$ ]] || return 1
+    return 0
+}
+
 addOrUpdateYaml() {
     local file=$1
     local keyPath=$2
@@ -859,7 +954,11 @@ countdown() {
 
 
 setHysteriaConfig(){
+	# Default-deny mode for everything we create from here on (config files
+	# include the auth secret, ACME DNS API tokens, and TLS private keys).
+	umask 077
 	mkdir -p /etc/hihy/bin /etc/hihy/conf /etc/hihy/cert  /etc/hihy/result /etc/hihy/acl/
+	chmod 700 /etc/hihy /etc/hihy/conf /etc/hihy/cert
     acl_file="/etc/hihy/acl/acl.txt"
     if [ -f "${acl_file}" ];then
         rm -r ${acl_file}
@@ -877,12 +976,18 @@ setHysteriaConfig(){
 	touch $yaml_file
 
 	if [ -z "${certNum}" ] || [ "${certNum}" == "3" ];then
-		echoColor green "请输入自签证书的域名(默认:helloworld.com):"
-		read domain
-		if [ -z "${domain}" ];then
-			domain="helloworld.com"
-		fi
-		echo -e "->自签证书域名为:"`echoColor red ${domain}`"\n"
+		while :; do
+			echoColor green "请输入自签证书的域名(默认:helloworld.com):"
+			read domain
+			if [ -z "${domain}" ];then
+				domain="helloworld.com"
+			fi
+			if isValidDomain "${domain}"; then
+				break
+			fi
+			echoColor red "->域名格式不合法,请只使用 A-Z a-z 0-9 - . 字符,请重新输入"
+		done
+		echo -e "->自签证书域名为:"`echoColor red "${domain}"`"\n"
 		ip=`curl -4 -s -m 8 ip.sb`
 		if [ -z "${ip}" ];then
 			ip=`curl -s -m 8 ip.sb`
@@ -976,7 +1081,7 @@ setHysteriaConfig(){
             echoColor green "请输入cloudflare_api_token:"
             while :
             do
-                read cloudflare_api_token
+                read -rs cloudflare_api_token; echo ""
                 if [ -z "${cloudflare_api_token}" ];then
                     echoColor red "\n\n->此选项不能为空,请重新输入!"
                     echoColor green "请输入cloudflare_api_token:"
@@ -990,7 +1095,7 @@ setHysteriaConfig(){
             echoColor green "请输入Duck DNS duckdns_api_token:"
             while :
             do
-                read duckdns_api_token
+                read -rs duckdns_api_token; echo ""
                 if [ -z "${duckdns_api_token}" ];then
                     echoColor red "\n\n->此选项不能为空,请重新输入!"
                     echoColor green "请输入Duck DNS duckdns_api_token:"
@@ -1015,7 +1120,7 @@ setHysteriaConfig(){
             echoColor green "请输入Gandi gandi_api_token:"
             while :
             do
-                read gandi_api_token
+                read -rs gandi_api_token; echo ""
                 if [ -z "${gandi_api_token}" ];then
                     echoColor red "\n\n->此选项不能为空,请重新输入!"
                     echoColor green "请输入Gandi gandi_api_token:"
@@ -1029,7 +1134,7 @@ setHysteriaConfig(){
             echoColor green "请输入Godaddy godaddy_api_token:"
             while :
             do
-                read godaddy_api_token
+                read -rs godaddy_api_token; echo ""
                 if [ -z "${godaddy_api_token}" ];then
                     echoColor red "\n\n->此选项不能为空,请重新输入!"
                     echoColor green "请输入 Godaddy godaddy_api_token:"
@@ -1043,7 +1148,7 @@ setHysteriaConfig(){
             echoColor green "请输入Name.com namedotcom_api_token:"
             while :
             do
-                read namedotcom_api_token
+                read -rs namedotcom_api_token; echo ""
                 if [ -z "${namedotcom_api_token}" ];then
                     echoColor red "\n\n->此选项不能为空,请重新输入!"
                     echoColor green "请输入Name.com namedotcom_api_token:"
@@ -1079,7 +1184,7 @@ setHysteriaConfig(){
             echoColor green "请输入Vultr vultr_api_token:"
             while :
             do
-                read vultr_api_token
+                read -rs vultr_api_token; echo ""
                 if [ -z "${vultr_api_token}" ];then
                     echoColor red "\n\n->此选项不能为空,请重新输入!"
                     echoColor green "请输入Vultr vultr_api_token:"
@@ -1200,13 +1305,13 @@ setHysteriaConfig(){
 		echo "并没有证据表明非udp/443的端口会被阻断,它仅仅是可能有更好的伪装一种措施,`echoColor red "如果你使用端口跳跃的话，这里建议使用随机端口"`"
 		read  port
 		if [ -z "${port}" ];then
-			port=$(($(od -An -N2 -i /dev/random) % (65534 - 10001) + 10001))
+			port=$(($(od -An -N2 -i /dev/urandom) % (65534 - 10001) + 10001))
 			echo -e "\n->使用随机端口:"`echoColor red udp/${port}`"\n"
 		else
 			echo -e "\n->您输入的端口:"`echoColor red udp/${port}`"\n"
 		fi
-		if [ "${port}" -gt 65535 ];then
-			echoColor red "端口范围错误,请重新输入!"
+		if ! isValidPort "${port}";then
+			echoColor red "端口范围错误,必须为 1-65535 的整数,请重新输入!"
 			continue
 		fi
 		pIDa=`lsof -i udp:${port} | grep -v "PID" | awk '{print $2}'`
@@ -1233,8 +1338,8 @@ setHysteriaConfig(){
 			if [ -z "${portHoppingStart}" ];then
 				portHoppingStart=47000
 			fi
-			if [ ${portHoppingStart} -gt 65535 ];then
-				echoColor red "\n->端口范围错误,请重新输入!"
+			if ! isValidPort "${portHoppingStart}";then
+				echoColor red "\n->端口范围错误,必须为 1-65535 的整数,请重新输入!"
 				continue
 			fi
 			echo -e "\n->起始端口:"`echoColor red ${portHoppingStart}`"\n"
@@ -1243,8 +1348,8 @@ setHysteriaConfig(){
 			if [ -z "${portHoppingEnd}" ];then
 				portHoppingEnd=48000
 			fi
-			if [ ${portHoppingEnd} -gt 65535 ];then
-				echoColor red "\n->端口范围错误,请重新输入!"
+			if ! isValidPort "${portHoppingEnd}";then
+				echoColor red "\n->端口范围错误,必须为 1-65535 的整数,请重新输入!"
 				continue
 			fi
 			echo -e "\n->结束端口:"`echoColor red ${portHoppingEnd}`"\n"
@@ -1383,12 +1488,13 @@ setHysteriaConfig(){
         upload=""
         echoColor lightYellow "(5-7/13)当前选择的是非 Brutal 模式，已跳过延时与上下行带宽输入，改用拥塞控制器本地配置。"
     fi
-	echoColor green "(8/13)请输入认证口令(默认随机生成UUID作为密码,建议使用强密码):"
-	read auth_secret
+	echoColor green "(8/13)请输入认证口令(默认随机生成UUID作为密码,建议使用强密码;输入不回显):"
+	read -rs auth_secret
+	echo ""
 	if [ -z "${auth_secret}" ]; then
     	auth_secret=$(generate_uuid)
     fi
-    echo -e "\n->认证口令:"`echoColor red ${auth_secret}`"\n"
+    echo -e "\n->认证口令已设置(已隐藏,完整值保存在 /etc/hihy/conf/config.yaml,可通过菜单查看客户端配置)\n"
 	echo -e "Tips: 如果使用obfs混淆,抗封锁能力更强,能被识别为未知udp流量。\n但是会增加cpu负载导致峰值速度下降,如果您追求性能且未被针对封锁建议不使用"
 	echo -e "\033[32m(9/13)是否使用salamander进行流量混淆:\n\n\033[0m\033[33m\033[01m1、不使用(推荐)\n2、使用\033[0m\033[32m\n\n输入序号:\033[0m"
 	read obfs_num
@@ -1407,16 +1513,18 @@ setHysteriaConfig(){
 	read masquerade_type
     if [ -z "${masquerade_type}" ] || [ ${masquerade_type} == "1" ];then
         masquerade_type="string"
-        echo -e "请输入伪装字符串(默认:HelloWorld):"
+        default_masquerade_string=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 12)
+        default_masquerade_stuff=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 24)
+        echo -e "请输入伪装字符串(默认随机:${default_masquerade_string}):"
         read masquerade_string
         if [ -z "${masquerade_string}" ];then
-            masquerade_string="HelloWorld"
+            masquerade_string="${default_masquerade_string}"
         fi
         echo -e "\n->伪装字符串:`echoColor red ${masquerade_string}`\n"
-        echo -e "请输入http伪装标头content-stuff(默认:HelloWorld):"
+        echo -e "请输入http伪装标头content-stuff(默认随机:${default_masquerade_stuff}):"
         read masquerade_stuff
         if [ -z "${masquerade_stuff}" ];then
-            masquerade_stuff="HelloWorld"
+            masquerade_stuff="${default_masquerade_stuff}"
         fi
         echo -e "\n->http伪装标头content-stuff:`echoColor red ${masquerade_stuff}`\n"
     elif [ ${masquerade_type} == "2" ];then
@@ -1548,10 +1656,16 @@ setHysteriaConfig(){
             addOrUpdateYaml "$yaml_file" "masquerade.type" "file"
             addOrUpdateYaml "$yaml_file" "masquerade.file.dir" "${masquerade_file}"
             if [ ! -d "${masquerade_file}" ];then
-                mkdir -p ${masquerade_file}
-                wget -q -O ./mikutap.tar.gz https://github.com/HFIProgramming/mikutap/archive/refs/tags/2.0.0.tar.gz
-                tar -xzf ./mikutap.tar.gz -C ${masquerade_file} --strip-components=1
-                rm -r ./mikutap.tar.gz
+                mkdir -p "${masquerade_file}"
+                local mikutap_dl
+                mikutap_dl=$(mktemp) || exit 1
+                if ! downloadToFile "https://github.com/HFIProgramming/mikutap/archive/refs/tags/2.0.0.tar.gz" "$mikutap_dl"; then
+                    rm -f "$mikutap_dl"
+                    echoColor red "下载 mikutap 失败"
+                    exit 1
+                fi
+                tar -xzf "$mikutap_dl" -C "${masquerade_file}" --strip-components=1
+                rm -f "$mikutap_dl"
             fi
         ;;
     esac
@@ -1574,19 +1688,23 @@ setHysteriaConfig(){
 			insecure="1"
             days=3650
             mail="no-reply@qq.com"
+            if ! isValidDomain "${domain}"; then
+                echoColor red "自签证书域名格式不合法,中止安装"
+                exit 1
+            fi
             echoColor purple "开始生成自签名证书...\n"
             echoColor green "生成 CA 私钥..."
-            openssl genrsa -out /etc/hihy/cert/${domain}.ca.key 2048
+            openssl genrsa -out "/etc/hihy/cert/${domain}.ca.key" 2048
             echoColor green "生成 CA 证书..."
-            openssl req -new -x509 -days ${days} -key /etc/hihy/cert/${domain}.ca.key -subj "/C=CN/ST=GuangDong/L=ShenZhen/O=PonyMa/OU=Tecent/emailAddress=${mail}/CN=Tencent Root CA" -out /etc/hihy/cert/${domain}.ca.crt
+            openssl req -new -x509 -days "${days}" -key "/etc/hihy/cert/${domain}.ca.key" -subj "/C=CN/ST=GuangDong/L=ShenZhen/O=PonyMa/OU=Tecent/emailAddress=${mail}/CN=Tencent Root CA" -out "/etc/hihy/cert/${domain}.ca.crt"
             echoColor green "生成服务器私钥和 CSR..."
-            openssl req -newkey rsa:2048 -nodes -keyout /etc/hihy/cert/${domain}.key -subj "/C=CN/ST=GuangDong/L=ShenZhen/O=PonyMa/OU=Tecent/emailAddress=${mail}/CN=${domain}" -out /etc/hihy/cert/${domain}.csr
+            openssl req -newkey rsa:2048 -nodes -keyout "/etc/hihy/cert/${domain}.key" -subj "/C=CN/ST=GuangDong/L=ShenZhen/O=PonyMa/OU=Tecent/emailAddress=${mail}/CN=${domain}" -out "/etc/hihy/cert/${domain}.csr"
             echoColor green "使用 CA 签署服务器证书..."
-            openssl x509 -req -extfile <(printf "subjectAltName=DNS:${domain},DNS:${domain}") -days ${days} -in /etc/hihy/cert/${domain}.csr -CA /etc/hihy/cert/${domain}.ca.crt -CAkey /etc/hihy/cert/${domain}.ca.key -CAcreateserial -out /etc/hihy/cert/${domain}.crt
+            openssl x509 -req -extfile <(printf '%s' "subjectAltName=DNS:${domain},DNS:${domain}") -days "${days}" -in "/etc/hihy/cert/${domain}.csr" -CA "/etc/hihy/cert/${domain}.ca.crt" -CAkey "/etc/hihy/cert/${domain}.ca.key" -CAcreateserial -out "/etc/hihy/cert/${domain}.crt"
             echoColor green "清理临时文件..."
-            rm /etc/hihy/cert/${domain}.ca.key /etc/hihy/cert/${domain}.ca.srl /etc/hihy/cert/${domain}.csr
+            rm -f "/etc/hihy/cert/${domain}.ca.key" "/etc/hihy/cert/${domain}.ca.srl" "/etc/hihy/cert/${domain}.csr"
             echoColor green "移动 CA 证书到结果目录..."
-            mv /etc/hihy/cert/${domain}.ca.crt /etc/hihy/result
+            mv "/etc/hihy/cert/${domain}.ca.crt" /etc/hihy/result
             echoColor purple "证书生成成功！\n"
 			addOrUpdateYaml "$yaml_file" "tls.cert" "/etc/hihy/cert/${domain}.crt"
 			addOrUpdateYaml "$yaml_file" "tls.key" "/etc/hihy/cert/${domain}.key"
@@ -1669,7 +1787,7 @@ setHysteriaConfig(){
     addOrUpdateYaml "$yaml_file" "outbounds[2].type" "direct" "string"
     addOrUpdateYaml "$yaml_file" "outbounds[2].direct.mode" "6" "number"
     addOrUpdateYaml "$yaml_file" "outbounds[2].direct.fastOpen" "false" "bool"
-    trafficPort=$(($(od -An -N2 -i /dev/random) % (65534 - 10001) + 10001))
+    trafficPort=$(($(od -An -N2 -i /dev/urandom) % (65534 - 10001) + 10001))
     if [ "$trafficPort" == "${port}" ];then
         trafficPort=$((${port} + 1))
     fi
@@ -1691,13 +1809,13 @@ setHysteriaConfig(){
     fi
     sysctl -p
 	echo -e "\033[1;;35m\nTest config...\n\033[0m"
-	startInstallValidationProcess "${yaml_file}" "./hihy_debug.info"
+	startInstallValidationProcess "${yaml_file}" "/etc/hihy/result/hihy_debug.info"
     if [ "${useAcme}" == "true" ];then
         countdown 20
     else
         countdown 5
     fi
-	msg=`cat ./hihy_debug.info`
+	msg=`cat /etc/hihy/result/hihy_debug.info`
     case ${msg} in
         *"failed to get a certificate with ACME"*)
             markInstallFailed "certificate" "failed to get a certificate with ACME"
@@ -1705,7 +1823,7 @@ setHysteriaConfig(){
             rm /etc/hihy/conf/config.yaml
             rm /etc/hihy/result/backup.yaml
             delHihyFirewallPort
-            rm ./hihy_debug.info
+            rm /etc/hihy/result/hihy_debug.info
             echoColor yellow "当前安装处于未完成状态，可修正问题后重新执行安装，或执行卸载进行清理。"
             exit
             ;;
@@ -1715,7 +1833,7 @@ setHysteriaConfig(){
             rm /etc/hihy/result/backup.yaml
             delHihyFirewallPort
             echoColor red "端口被占用,请更换端口!"
-            rm ./hihy_debug.info
+            rm /etc/hihy/result/hihy_debug.info
             echoColor yellow "当前安装处于未完成状态，可更换端口后重新执行安装，或执行卸载进行清理。"
             exit
             ;;
@@ -1723,7 +1841,7 @@ setHysteriaConfig(){
             echoColor green "Test success!"
             echoColor purple "Stop test program..."
             pkill -f "/etc/hihy/bin/appS"
-            rm ./hihy_debug.info
+            rm /etc/hihy/result/hihy_debug.info
             allowPort udp ${port}
             if [ "${portHoppingStatus}" == "true" ];then
                 allowPort udp ${portHoppingStart}:${portHoppingEnd}
@@ -1742,8 +1860,8 @@ setHysteriaConfig(){
             pkill -f "/etc/hihy/bin/appS"
             echoColor red "未知错误: 请查看下方错误信息,并提交issue到github"
             echoColor yellow "已保留未完成安装状态，修正问题后可重新执行安装，或执行卸载进行清理。"
-            cat ./hihy_debug.info
-            rm ./hihy_debug.info
+            cat /etc/hihy/result/hihy_debug.info
+            rm /etc/hihy/result/hihy_debug.info
             exit
             ;;
     esac
@@ -1787,6 +1905,10 @@ setHysteriaConfig(){
 		echoColor red "hihy 命令安装失败,请检查网络或写入权限后重试."
 		exit 1
 	fi
+	# Tighten permissions on the now-finalized config + backup (contain auth
+	# password, ACME DNS API tokens) and on any private keys we wrote.
+	chmod 600 "$yaml_file" "$backup_file" 2>/dev/null || true
+	chmod 600 /etc/hihy/cert/*.key 2>/dev/null || true
 	clearInstallFailureMarker
 	echoColor greenWhite "安装成功,请查看下方配置详细信息"
 }
@@ -1831,12 +1953,18 @@ downloadHysteriaCore(){
             ;;
     esac
 
-    wget -q -O /etc/hihy/bin/appS --no-check-certificate "$download_url"
-    
-    if [ -f "/etc/hihy/bin/appS" ]; then
+    rm -f /etc/hihy/bin/appS
+    if ! downloadToFile "$download_url" /etc/hihy/bin/appS; then
+        rm -f /etc/hihy/bin/appS
+        echoColor red "Network Error: Can't connect to Github!"
+        exit 1
+    fi
+
+    if [ -s "/etc/hihy/bin/appS" ]; then
         chmod 755 /etc/hihy/bin/appS
         echoColor purple "\nDownload completed."
     else
+        rm -f /etc/hihy/bin/appS
         echoColor red "Network Error: Can't connect to Github!"
         exit 1
     fi
@@ -1973,7 +2101,9 @@ install() {
     fi
 
     # 创建必要目录
+    umask 077
     mkdir -p /etc/hihy/{bin,conf,cert,result,logs}
+    chmod 700 /etc/hihy /etc/hihy/conf /etc/hihy/cert
     markInstallFailed "install-start" "installation started but not completed"
     echoColor purple "Ready to install.\n"
 
@@ -2018,11 +2148,12 @@ start() {
         eerror "hihy is already running"
         return 1
     fi
-    
+
     ebegin "Starting hihy"
     mkdir -p \$(dirname "\$output_log")
     nohup \$command \$command_args > "\$output_log" 2>&1 &
     echo \$! > "\$pidfile"
+    chmod 600 "\$pidfile" 2>/dev/null || true
     eend \$?
 }
 
@@ -2031,9 +2162,12 @@ stop() {
         eerror "hihy is not running"
         return 1
     fi
-    
+
     ebegin "Stopping hihy"
-    kill \$(cat "\$pidfile")
+    pid=\$(cat "\$pidfile" 2>/dev/null)
+    if [ -n "\$pid" ] && [ -r "/proc/\$pid/comm" ] && [ "\$(cat /proc/\$pid/comm 2>/dev/null)" = "appS" ]; then
+        kill "\$pid"
+    fi
     rm -f "\$pidfile"
     eend \$?
 }
@@ -2089,6 +2223,7 @@ start() {
         nohup env HYSTERIA_FIREWALL_BACKEND="\$HYSTERIA_FIREWALL_BACKEND" \$HIHY_PATH/bin/appS --log-level info -c \$HIHY_PATH/conf/config.yaml server > "\$LOG_FILE" 2>&1 &
     fi
     echo \$! > "\$PID_FILE"
+    chmod 600 "\$PID_FILE" 2>/dev/null || true
 }
 
 stop() {
@@ -2096,9 +2231,12 @@ stop() {
         echo "hihy is not running"
         return 1
     fi
-    
+
     echo "Stopping hihy..."
-    kill \$(cat "\$PID_FILE")
+    pid=\$(cat "\$PID_FILE" 2>/dev/null)
+    if [ -n "\$pid" ] && [ -r "/proc/\$pid/comm" ] && [ "\$(cat /proc/\$pid/comm 2>/dev/null)" = "appS" ]; then
+        kill "\$pid"
+    fi
     rm -f "\$PID_FILE"
 }
 
@@ -2159,10 +2297,14 @@ EOF
     
 
     # 添加定时任务
-    crontab -l > ./crontab.tmp 2>/dev/null || touch ./crontab.tmp
-    echo "15 4 * * 1 hihy cronTask" >> ./crontab.tmp
-    crontab ./crontab.tmp
-    rm ./crontab.tmp
+    local crontab_tmp
+    crontab_tmp=$(mktemp) || exit 1
+    crontab -l > "$crontab_tmp" 2>/dev/null || true
+    if ! grep -Fxq "15 4 * * 1 hihy cronTask" "$crontab_tmp"; then
+        echo "15 4 * * 1 hihy cronTask" >> "$crontab_tmp"
+    fi
+    crontab "$crontab_tmp"
+    rm -f "$crontab_tmp"
     setup_rc_local_for_arch
 
     generate_client_config
@@ -2448,12 +2590,11 @@ delPortHoppingNat() {
     if [ -n "$nat_rules_v4" ]; then
         while IFS= read -r rule; do
             local clean_rule=$(echo "$rule" | sed 's/-A/-D/')
-            # 添加执行结果检查
-            if eval "iptables $clean_rule 2>/dev/null" || ! iptables -t nat -C $(echo "$clean_rule" | cut -d' ' -f2-) 2>/dev/null; then
-                # 规则删除成功或规则已不存在都视为成功
+            # Re-tokenize via xargs to respect quoted comments without evaluating
+            # shell metachars from iptables-save output.
+            if printf '%s' "$clean_rule" | xargs -r iptables 2>/dev/null \
+                || ! printf '%s' "$clean_rule" | cut -d' ' -f2- | xargs -r iptables -t nat -C 2>/dev/null; then
                 continue
-            # else
-            #     echoColor yellow "警告: 删除 IPv4 规则失败: $clean_rule"
             fi
         done <<< "$nat_rules_v4"
     fi
@@ -2461,12 +2602,9 @@ delPortHoppingNat() {
     if [ -n "$nat_rules_v6" ]; then
         while IFS= read -r rule; do
             local clean_rule=$(echo "$rule" | sed 's/-A/-D/')
-            # 添加执行结果检查
-            if eval "ip6tables $clean_rule 2>/dev/null" || ! ip6tables -t nat -C $(echo "$clean_rule" | cut -d' ' -f2-) 2>/dev/null; then
-                # 规则删除成功或规则已不存在都视为成功
+            if printf '%s' "$clean_rule" | xargs -r ip6tables 2>/dev/null \
+                || ! printf '%s' "$clean_rule" | cut -d' ' -f2- | xargs -r ip6tables -t nat -C 2>/dev/null; then
                 continue
-            # else
-            #     echoColor yellow "警告: 删除 IPv6 规则失败: $clean_rule"
             fi
         done <<< "$nat_rules_v6"
     fi
@@ -3352,10 +3490,14 @@ aclControl(){
                         echoColor red "域名不能为空"
                         exit 1
                     fi
-                    if grep -q "v4_only(suffix:${domain})" "${acl_file}"; then
+                    if ! isValidDomain "${domain}"; then
+                        echoColor red "域名格式不合法"
+                        exit 1
+                    fi
+                    if grep -Fxq "v4_only(suffix:${domain})" "${acl_file}"; then
                         echoColor red "规则已存在"
                     else
-                        echo "v4_only(suffix:${domain})" >> "${acl_file}"
+                        printf '%s\n' "v4_only(suffix:${domain})" >> "${acl_file}"
                         echoColor green "添加成功"
                         restart
                     fi
@@ -3366,10 +3508,14 @@ aclControl(){
                         echoColor red "域名不能为空"
                         exit 1
                     fi
-                    if grep -q "v6_only(suffix:${domain})" "${acl_file}"; then
+                    if ! isValidDomain "${domain}"; then
+                        echoColor red "域名格式不合法"
+                        exit 1
+                    fi
+                    if grep -Fxq "v6_only(suffix:${domain})" "${acl_file}"; then
                         echoColor red "规则已存在"
                     else
-                        echo "v6_only(suffix:${domain})" >> "${acl_file}"
+                        printf '%s\n' "v6_only(suffix:${domain})" >> "${acl_file}"
                         echoColor green "添加成功"
                         restart
                     fi
@@ -3380,10 +3526,14 @@ aclControl(){
                         echoColor red "域名不能为空"
                         exit 1
                     fi
-                    if grep -q "reject(suffix:${rejectInput})" "${acl_file}"; then
+                    if ! isValidDomain "${rejectInput}"; then
+                        echoColor red "域名格式不合法"
+                        exit 1
+                    fi
+                    if grep -Fxq "reject(suffix:${rejectInput})" "${acl_file}"; then
                         echoColor red "规则已存在"
                     else
-                        echo "reject(suffix:${rejectInput})" >> "${acl_file}"
+                        printf '%s\n' "reject(suffix:${rejectInput})" >> "${acl_file}"
                         echoColor green "添加成功"
                         restart
                     fi
@@ -3397,14 +3547,23 @@ aclControl(){
                 echoColor red "域名不能为空"
                 exit 1
             fi
-            if grep -q "${domain}" "${acl_file}"; then
-                sed -i "/${domain}/d" "${acl_file}"
+            if ! isValidDomain "${domain}"; then
+                echoColor red "域名格式不合法"
+                exit 1
+            fi
+            local matched_count
+            matched_count=$(grep -cE "^(v4_only|v6_only|reject)\(suffix:${domain}\)$" "${acl_file}" 2>/dev/null || true)
+            if [ -n "${matched_count}" ] && [ "${matched_count}" -gt 0 ]; then
+                local acl_tmp
+                acl_tmp=$(mktemp) || exit 1
+                grep -vE "^(v4_only|v6_only|reject)\(suffix:${domain}\)$" "${acl_file}" > "${acl_tmp}" || true
+                mv "${acl_tmp}" "${acl_file}"
                 echoColor green "删除成功"
                 restart
             else
                 echoColor red "规则不存在"
             fi
-          
+
         ;;
         3)
             echoColor purple "当前ACL列表:"
@@ -3444,11 +3603,15 @@ addSocks5Outbound(){
             echoColor red "未找到WireProxy配置文件,请保证正确安装WireProxy"
             exit 1
         fi
-        local port=$(grep "BindAddress" "$conf_file" | grep -v "^#" | awk -F':' '{print $2}')
+        local port=$(grep "BindAddress" "$conf_file" | grep -v "^#" | awk -F':' '{print $2}' | tr -d '[:space:]')
+        if ! [[ "$port" =~ ^[0-9]+$ ]] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+            echoColor red "无法从 ${conf_file} 解析合法端口"
+            exit 1
+        fi
         echoColor purple "->本机WireProxy socks5端口: `echoColor red ${port}`"
-        
+
         # 在数组开头插入新的outbound配置
-        yq eval '.outbounds = [{"name": "warp", "type": "socks5", "socks5": {"addr": "127.0.0.1:'$port'"}}] + .outbounds' -i "${server_config}"
+        addr="127.0.0.1:${port}" yq eval '.outbounds = [{"name": "warp", "type": "socks5", "socks5": {"addr": strenv(addr)}}] + .outbounds' -i "${server_config}"
 
         restart
         addOrUpdateYaml ${backup_config} "socks5_status" "true"
@@ -3467,7 +3630,8 @@ addSocks5Outbound(){
         fi
         read -p "请输入socks5用户名,如果没有鉴权直接留空: " socks5_user
         if [ -n "${socks5_user}" ]; then
-            read -p "请输入socks5密码: " socks5_pass
+            read -rsp "请输入socks5密码(输入不回显): " socks5_pass
+            echo ""
             if [ -z "${socks5_pass}" ]; then
                 echoColor red "密码不能为空"
                 exit 1
@@ -3475,10 +3639,9 @@ addSocks5Outbound(){
         fi
         local server_config="/etc/hihy/conf/config.yaml"
         if [ -n "${socks5_user}" ]; then
-            yq eval '.outbounds = [{"name": "custom", "type": "socks5", "socks5": {"addr": "'$socks5_addr'", "username": "'$socks5_user'", "password": "'$socks5_pass'"}}] + .outbounds' -i "${server_config}"
+            addr="${socks5_addr}" user="${socks5_user}" pass="${socks5_pass}" yq eval '.outbounds = [{"name": "custom", "type": "socks5", "socks5": {"addr": strenv(addr), "username": strenv(user), "password": strenv(pass)}}] + .outbounds' -i "${server_config}"
         else
-            yq eval '.outbounds = [{"name": "custom", "type": "socks5", "socks5": {"addr": "'$socks5_addr'"}}] + .outbounds' -i "${server_config}"
-
+            addr="${socks5_addr}" yq eval '.outbounds = [{"name": "custom", "type": "socks5", "socks5": {"addr": strenv(addr)}}] + .outbounds' -i "${server_config}"
         fi
         restart
         addOrUpdateYaml ${backup_config} "socks5_status" "true"

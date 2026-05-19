@@ -14,13 +14,13 @@ downloadHihyScript() {
     mkdir -p "$output_dir" || return 1
     temp_output_path="$(mktemp "$output_dir/.${output_name}.tmp.XXXXXX")" || return 1
 
-    if command -v wget >/dev/null 2>&1; then
-        wget -q --no-check-certificate -O "$temp_output_path" "$url" || {
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL -o "$temp_output_path" "$url" || {
             rm -f "$temp_output_path"
             return 1
         }
-    elif command -v curl >/dev/null 2>&1; then
-        curl -fsSL -o "$temp_output_path" "$url" || {
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q -O "$temp_output_path" "$url" || {
             rm -f "$temp_output_path"
             return 1
         }
