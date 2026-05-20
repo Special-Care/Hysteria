@@ -1544,6 +1544,15 @@ setHysteriaConfig(){
             masquerade_xforwarded="false"
         fi
         echo -e "\n->X-Forwarded请求头: "`echoColor red ${masquerade_xforwarded}`"\n"
+        echo -e "\033[32m上游伪装站点是否使用自签/无效证书(若是公网正经网站请选否):\n\n\033[0m\033[33m\033[01m1、否,严格校验上游 TLS 证书(默认,推荐)\n2、是,跳过上游证书校验\033[0m\033[32m\n\n输入序号:\033[0m"
+        read masquerade_proxy_insecure_num
+        if [ "${masquerade_proxy_insecure_num}" == "2" ];then
+            masquerade_proxy_insecure="true"
+            echoColor yellow "\n->已选择跳过上游 TLS 校验,中间人可篡改伪装内容\n"
+        else
+            masquerade_proxy_insecure="false"
+            echo -e "\n->上游 TLS 校验: "`echoColor red "严格"`"\n"
+        fi
     else
         masquerade_type="file"
         masquerade_xforwarded="false"
@@ -1649,7 +1658,7 @@ setHysteriaConfig(){
             addOrUpdateYaml "$yaml_file" "masquerade.type" "proxy"
             addOrUpdateYaml "$yaml_file" "masquerade.proxy.url" "${masquerade_proxy}"
             addOrUpdateYaml "$yaml_file" "masquerade.proxy.rewriteHost" "true"
-            addOrUpdateYaml "$yaml_file" "masquerade.proxy.insecure" "true"
+            addOrUpdateYaml "$yaml_file" "masquerade.proxy.insecure" "${masquerade_proxy_insecure:-false}"
             addOrUpdateYaml "$yaml_file" "masquerade.proxy.xForwarded" "${masquerade_xforwarded}"
         ;;
         "file")
