@@ -1,8 +1,10 @@
 #!/bin/bash
+hihyV="ver1.04-d"
 # Sanitize PATH so we always resolve system binaries from trusted locations,
 # regardless of whatever environment the operator's shell was launched in.
+# Keep `hihyV` on line 2 — getLatestHihyVersion in older installed copies
+# of hihy parses the remote script by `sed -n '2p'`.
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin${PATH:+:$PATH}"
-hihyV="ver1.04-d"
 
 HIHY_ROOT_DIR="${HIHY_ROOT_DIR:-/etc/hihy}"
 HIHY_BIN_LINK="${HIHY_BIN_LINK:-/usr/bin/hihy}"
@@ -93,7 +95,9 @@ getLatestHihyVersion() {
     local content
 
     content=$(fetchRemoteBodyFromSources "$HIHY_REMOTE_SCRIPT_URL" "$HIHY_REMOTE_SCRIPT_MIRROR_URL") || return 1
-    printf '%s\n' "$content" | sed -n '2p' | cut -d '"' -f 2 | head -n 1
+    # Match the hihyV assignment by name rather than by line number so future
+    # edits to the top of the script don't quietly break version notifications.
+    printf '%s\n' "$content" | grep -m1 '^hihyV=' | cut -d '"' -f 2
 }
 
 getLatestHysteriaVersion() {
