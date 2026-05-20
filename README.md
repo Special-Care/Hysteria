@@ -413,10 +413,6 @@ root@localhost:/opt/test# hihy 13
 
 **如果您有好的功能建议，请不要忘记开个issue提出来～～～欢迎PR来添加Todo或纠正我的渣代码**
 
-**我的爱好是写bug （￣▽￣）~**
-
-![img](imgs/gugugu.gif)
-
 * [ ] 多用户管理。包括踢用户下线、添加新的用户等等
 
 ## 五·结语
