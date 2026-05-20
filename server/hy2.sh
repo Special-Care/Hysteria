@@ -967,6 +967,10 @@ setHysteriaConfig(){
 	echoColor yellowBlack "开始配置:"
 	echo -e "\033[32m(1/11)请选择证书申请方式:\n\n\033[0m\033[33m\033[01m1、使用ACME申请(推荐,需打开tcp/80端口)\n2、使用本地证书文件\n3、自签证书\n4、dns验证\033[0m\033[32m\n\n输入序号:\033[0m"
     read certNum
+    if [ "${certNum}" == "1" ] || [ "${certNum}" == "4" ];then
+        echoColor yellow "提示:若您的域名挂在 Cloudflare 后,请把对应 A/AAAA 记录的代理状态设为\"仅 DNS\"(灰云)。"
+        echoColor yellow "      Cloudflare 橙云代理不支持 UDP/QUIC,会导致 Hysteria2 客户端无法连接。"
+    fi
 	useAcme=false
 	useLocalCert=false
 	yaml_file="/etc/hihy/conf/config.yaml"
