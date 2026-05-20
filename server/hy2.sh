@@ -3683,10 +3683,12 @@ addSocks5Outbound(){
 
 show_menu() {
     clear
+    # Each banner line is exactly 46 visible chars (10*+content+10*+2 pipes).
+    # If hihyV length changes, re-pad the Version line to keep the box square.
     echo -e " -------------------------------------------"
     echo -e "|**********      Hi Hysteria       **********|"
     echo -e "|**********    Author: specialcare **********|"
-    echo -e "|**********     Version: $(echoColor red "${hihyV}")    **********|"
+    echo -e "|**********   Version: $(echoColor red "${hihyV}")   **********|"
     echo -e " -------------------------------------------"
     echo -e "Tips: $(echoColor green "hihy") 命令再次运行本脚本."
     echo -e "$(echoColor skyBlue ".............................................")"
