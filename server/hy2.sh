@@ -2,7 +2,7 @@
 # Sanitize PATH so we always resolve system binaries from trusted locations,
 # regardless of whatever environment the operator's shell was launched in.
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin${PATH:+:$PATH}"
-hihyV="ver1.04-c"
+hihyV="ver1.04-d"
 
 HIHY_ROOT_DIR="${HIHY_ROOT_DIR:-/etc/hihy}"
 HIHY_BIN_LINK="${HIHY_BIN_LINK:-/usr/bin/hihy}"
@@ -965,7 +965,7 @@ setHysteriaConfig(){
     fi
     touch $acl_file
 	echoColor yellowBlack "开始配置:"
-	echo -e "\033[32m(1/11)请选择证书申请方式:\n\n\033[0m\033[33m\033[01m1、使用ACME申请(推荐,需打开tcp/80端口)\n2、使用本地证书文件\n3、自签证书\n4、dns验证\033[0m\033[32m\n\n输入序号:\033[0m"
+	echo -e "\033[32m(1/13)请选择证书申请方式:\n\n\033[0m\033[33m\033[01m1、使用ACME申请(推荐,需打开tcp/80端口)\n2、使用本地证书文件\n3、自签证书\n4、dns验证\033[0m\033[32m\n\n输入序号:\033[0m"
     read certNum
     if [ "${certNum}" == "1" ] || [ "${certNum}" == "4" ];then
         echoColor yellow "提示:若您的域名挂在 Cloudflare 后,请把对应 A/AAAA 记录的代理状态设为\"仅 DNS\"(灰云)。"
@@ -1305,7 +1305,7 @@ setHysteriaConfig(){
 
 	while :
 	do
-		echoColor green "\n(2/11)请输入你想要开启的端口,此端口是server端口,推荐443.(默认随机10000-65535)"
+		echoColor green "\n(2/13)请输入你想要开启的端口,此端口是server端口,推荐443.(默认随机10000-65535)"
 		echo "并没有证据表明非udp/443的端口会被阻断,它仅仅是可能有更好的伪装一种措施,`echoColor red "如果你使用端口跳跃的话，这里建议使用随机端口"`"
 		read  port
 		if [ -z "${port}" ];then

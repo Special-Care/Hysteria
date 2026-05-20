@@ -1,3 +1,35 @@
+##### (2026/05/20) ver1.04-d
+
+```
+全面安全加固:杜绝 MITM RCE、注入风险,收紧机密文件权限,修复多处 CWD 临时文件竞态。
+
+[供应链 / TLS]
+1、install.sh 与 hy2.sh 内 3 处 `wget --no-check-certificate` 全部移除,改走带 TLS 校验的统一下载路径
+2、yq 二进制改为固定版本 (HIHY_YQ_VERSION) + 同 release 下 checksums 文件 SHA-256 校验,失败直接中止
+
+[输入注入 / 机密保护]
+3、新增 isValidDomain 严格校验;自签证书 openssl 全部参数加引号,修复 `printf "...${var}..."` 格式串隐患
+4、SOCKS5 出站 3 处 yq eval 改用 strenv() 绑定环境变量,杜绝 YAML 注入;WireProxy 端口加数字校验
+5、auth_secret、socks5 密码、6 个 ACME DNS API token 改 `read -rs` 不回显;auth_secret 不再以明文 echo 出
+6、ACL 添加/删除改为 `grep -Fxq` 整行精确匹配,消除 `sed -i "/${domain}/d"` 通配符注入
+7、delPortHoppingNat 删除 `eval "iptables $rule"`,改用 `printf | xargs -r iptables` 安全转义
+8、umask 077 + chmod 700 /etc/hihy/{conf,cert};config.yaml、backup.yaml、私钥统一 chmod 600
+
+[文件竞态 / 运行时硬化]
+9、mikutap 包、crontab 缓冲、hihy_debug.info 均不再使用 CWD 相对路径(改用 mktemp 或 root-only 结果目录)
+10、service 脚本 stop() 校验 /proc/$PID/comm == appS 后再 kill;PID 文件 chmod 600
+11、新增 isValidPort 辅助;端口输入要求 1-65535 整数
+12、随机端口源从 /dev/random 改为 /dev/urandom (避免熵不足阻塞)
+13、脚本顶部显式设置 PATH 以防环境劫持
+
+[默认行为调整]
+14、masquerade.proxy.insecure 默认改为 false(原硬编码 true);新增交互询问是否跳过上游 TLS 校验
+15、伪装字符串 / content-stuff 默认值改为安装期随机生成(原硬编码 HelloWorld),抗指纹
+16、ACME 流程开始时提示用户:若域名挂在 Cloudflare 请保持 "仅 DNS" (灰云),橙云代理不支持 UDP/QUIC
+17、修复 (1/13) / (2/13) 步骤计数器与其余步骤不一致问题
+18、菜单与脚本版本号更新为 ver1.04-d
+```
+
 ##### (2026/04/18) ver1.04-c
 
 ```
