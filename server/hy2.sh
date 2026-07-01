@@ -706,6 +706,12 @@ generate_uuid() {
     echo "$uuid"
 }
 
+generate_password() {
+    # 8-char alnum from urandom (mirrors generate_uuid's urandom fallback idiom;
+    # ver1.04-d moved randomness to /dev/urandom to avoid entropy blocking).
+    cat /dev/urandom | tr -dc 'A-Za-z0-9' | head -c 8
+}
+
 getListenPrimaryPort() {
     local listen_value="$1"
 
@@ -879,6 +885,20 @@ isValidDomain() {
     [ "${#d}" -gt 253 ] && return 1
     [[ "$d" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$ ]] || return 1
     return 0
+}
+
+# Validate a hihy username. Restricted to URL/YAML-safe chars so it can be a
+# YAML map key and the userinfo before ':' in a hysteria2:// share link.
+isValidUsername() {
+    local u="$1"
+    [[ "$u" =~ ^[A-Za-z0-9_-]{1,32}$ ]]
+}
+
+# Validate a custom user password. URL-safe charset so it survives the
+# "user:pass@host" userinfo in share links unescaped.
+isValidPassword() {
+    local p="$1"
+    [[ "$p" =~ ^[A-Za-z0-9_.~-]{1,64}$ ]]
 }
 
 addOrUpdateYaml() {
