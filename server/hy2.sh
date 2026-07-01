@@ -1561,7 +1561,7 @@ setHysteriaConfig(){
         echoColor lightYellow "(5-7/13)当前选择的是非 Brutal 模式，已跳过延时与上下行带宽输入，改用拥塞控制器本地配置。"
     fi
 	echoColor green "(8/13)请设置首个用户的用户名(默认user1):"
-	read first_user
+	read -r first_user
 	if [ -z "${first_user}" ]; then
 		first_user="user1"
 	fi

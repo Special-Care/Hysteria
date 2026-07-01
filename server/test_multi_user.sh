@@ -165,6 +165,39 @@ test_export_mode_aware() {
         || { echo 'FAIL: client filename not user-tagged' >&2; exit 1; }
 }
 
+test_validator_length_boundaries() {
+    local u32 u33 p64 p65
+    u32=$(printf 'a%.0s' $(seq 1 32)); u33=$(printf 'a%.0s' $(seq 1 33))
+    p64=$(printf 'a%.0s' $(seq 1 64)); p65=$(printf 'a%.0s' $(seq 1 65))
+    assert_true  "isValidUsername \"$u32\"" "32-char username accepted"
+    assert_false "isValidUsername \"$u33\"" "33-char username rejected"
+    assert_true  "isValidPassword \"$p64\"" "64-char password accepted"
+    assert_false "isValidPassword \"$p65\"" "65-char password rejected"
+}
+
+test_userpass_absent_node() {
+    local f="$TEST_ROOT/legacy2.yaml"
+    cat > "$f" <<'YAML'
+auth:
+  type: password
+  password: single
+YAML
+    assert_equals "0" "$(userpassCountUsers "$f")" "absent userpass node counts as 0"
+    assert_false 'userpassUserExists "'"$f"'" anyone' "no user exists in legacy config"
+}
+
+test_traffic_secret_empty_falls_back() {
+    local f="$TEST_ROOT/empty.yaml"
+    cat > "$f" <<'YAML'
+auth:
+  type: password
+  password: fallbackpass
+trafficStats:
+  secret: ""
+YAML
+    assert_equals "fallbackpass" "$(getTrafficStatsSecret "$f")" "empty trafficStats.secret falls back to auth.password"
+}
+
 test_generate_password_shape
 test_is_valid_username
 test_is_valid_password
@@ -178,5 +211,8 @@ test_traffic_secret_fallback
 test_setconfig_writes_userpass
 test_usercontrol_wiring
 test_export_mode_aware
+test_validator_length_boundaries
+test_userpass_absent_node
+test_traffic_secret_empty_falls_back
 
 printf 'All multi-user tests passed.\n'
