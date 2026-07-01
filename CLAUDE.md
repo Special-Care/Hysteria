@@ -32,7 +32,7 @@ This codebase is intended to **run on Linux production servers**, not the macOS 
 
 ## Architecture notes
 
-**Single-file dispatcher.** `hy2.sh` is invoked either as the interactive menu (`menu` → `show_menu`) or with a subcommand argument that matches a menu number or a name: `install|1`, `uninstall|2`, `start|3`, `stop|4`, `restart|5`, `checkStatus|6`, `updateHysteriaCore|7`, `generate_client_config|8`, `changeServerConfig|9`, `changeIp64|10`, `hihyUpdate|11`, `aclControl|12`, `getHysteriaTrafic|13`, `checkLogs|14`, `addSocks5Outbound|15`, plus the internal `cronTask`. New top-level features need to be wired into the case statement at the bottom of `hy2.sh` **and** into `show_menu` / `menu`.
+**Single-file dispatcher.** `hy2.sh` is invoked either as the interactive menu (`menu` → `show_menu`) or with a subcommand argument that matches a menu number or a name: `install|1`, `uninstall|2`, `start|3`, `stop|4`, `restart|5`, `checkStatus|6`, `updateHysteriaCore|7`, `generate_client_config|8`, `changeServerConfig|9`, `changeIp64|10`, `hihyUpdate|11`, `aclControl|12`, `getHysteriaTrafic|13`, `checkLogs|14`, `addSocks5Outbound|15`, `userControl|16`, plus the internal `cronTask`. New top-level features need to be wired into the case statement at the bottom of `hy2.sh` **and** into `show_menu` / `menu`.
 
 **Install-state recovery.** `classifyInstallState` returns `installed` / `partially-installed` / `not-installed` by inspecting owned artifacts under `$HIHY_ROOT_DIR` (default `/etc/hihy/`), the launcher symlink, the service scripts, and a `markInstallFailed`-written failure marker. `install()` always calls this first and runs `recoverPartialInstallState` to clean orphaned files before re-installing. Any new install-time artifact should be added to the `owned_paths` list in `classifyInstallState` and to the cleanup paths in `recoverPartialInstallState` / `uninstall` so half-failed installs can self-heal.
 
@@ -44,7 +44,7 @@ This codebase is intended to **run on Linux production servers**, not the macOS 
 
 ## Version constant
 
-`hihyV` at the top of `server/hy2.sh` is the displayed version (currently `ver1.04-c`). It also appears in `show_menu`, the `README.md` header, and `md/logs.md`. Bump all three together on release.
+`hihyV` at the top of `server/hy2.sh` is the displayed version (currently `ver1.05`). It also appears in `show_menu`, the `README.md` header, and `md/logs.md`. Bump all three together on release.
 
 ## Remote URLs
 

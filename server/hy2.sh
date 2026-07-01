@@ -1,5 +1,5 @@
 #!/bin/bash
-hihyV="ver1.04-d"
+hihyV="ver1.05"
 # Sanitize PATH so we always resolve system binaries from trusted locations,
 # regardless of whatever environment the operator's shell was launched in.
 # Keep `hihyV` on line 2 — getLatestHihyVersion in older installed copies
@@ -3881,7 +3881,7 @@ show_menu() {
     echo -e " -------------------------------------------"
     echo -e "|**********      Hi Hysteria       **********|"
     echo -e "|**********    Author: specialcare **********|"
-    echo -e "|**********   Version: $(echoColor red "${hihyV}")   **********|"
+    echo -e "|**********   Version: $(echoColor red "${hihyV}")     **********|"
     echo -e " -------------------------------------------"
     echo -e "Tips: $(echoColor green "hihy") 命令再次运行本脚本."
     echo -e "$(echoColor skyBlue ".............................................")"
