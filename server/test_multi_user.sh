@@ -144,6 +144,15 @@ test_setconfig_writes_userpass() {
         || { echo 'FAIL: trafficStats.secret not decoupled' >&2; exit 1; }
 }
 
+test_usercontrol_wiring() {
+    local s="$SCRIPT_DIR/hy2.sh"
+    grep -Eq '^userControl\(\)' "$s"        || { echo 'FAIL: userControl() missing' >&2; exit 1; }
+    grep -Eq '^selectHysteriaUser\(\)' "$s" || { echo 'FAIL: selectHysteriaUser() missing' >&2; exit 1; }
+    grep -Fq '16) userControl; exit 0' "$s" || { echo 'FAIL: menu() case 16 missing' >&2; exit 1; }
+    grep -Fq 'userControl|16)' "$s"         || { echo 'FAIL: dispatcher case 16 missing' >&2; exit 1; }
+    grep -Fq '16) 多用户管理' "$s"          || { echo 'FAIL: show_menu entry 16 missing' >&2; exit 1; }
+}
+
 test_generate_password_shape
 test_is_valid_username
 test_is_valid_password
@@ -155,5 +164,6 @@ test_userpass_injection_safe
 test_traffic_secret_userpass
 test_traffic_secret_fallback
 test_setconfig_writes_userpass
+test_usercontrol_wiring
 
 printf 'All multi-user tests passed.\n'

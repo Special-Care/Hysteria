@@ -3762,6 +3762,107 @@ addSocks5Outbound(){
     
 }
 
+# Print the chosen username to stdout; all prompts go to stderr so callers can
+# capture the selection cleanly. Non-zero if there are no users.
+selectHysteriaUser() {
+    local config="/etc/hihy/conf/config.yaml"
+    local users=() line
+    while IFS= read -r line; do
+        [ -n "$line" ] && users+=("$line")
+    done < <(userpassListUsers "${config}")
+
+    if [ "${#users[@]}" -eq 0 ]; then
+        echoColor red "未找到任何用户" >&2
+        return 1
+    fi
+    if [ "${#users[@]}" -eq 1 ]; then
+        echo "${users[0]}"
+        return 0
+    fi
+
+    echoColor purple "请选择要导出配置的用户:" >&2
+    local i
+    for i in "${!users[@]}"; do
+        echoColor yellow "$((i + 1))) ${users[$i]}" >&2
+    done
+    local choice
+    read -p "请输入序号: " choice
+    if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt "${#users[@]}" ]; then
+        echoColor red "无效选择" >&2
+        return 1
+    fi
+    echo "${users[$((choice - 1))]}"
+}
+
+userControl() {
+    local config="/etc/hihy/conf/config.yaml"
+    if [ ! -f "${config}" ]; then
+        echoColor red "未找到配置文件,请先安装hysteria2"
+        exit 1
+    fi
+    local authType
+    authType=$(getYamlValue "${config}" "auth.type")
+    if [ "${authType}" != "userpass" ]; then
+        echoColor red "当前为单密码模式(旧版安装),请先用菜单9重新配置以启用多用户。"
+        exit 1
+    fi
+
+    echoColor purple "请选择管理操作:"
+    echoColor yellow "1) 添加用户"
+    echoColor yellow "2) 删除用户"
+    echoColor yellow "3) 查看用户"
+    echoColor yellow "0) 退出"
+    read -p "请选择: " input
+    case $input in
+        1)
+            read -p "请输入用户名: " username
+            if ! isValidUsername "${username}"; then
+                echoColor red "用户名不合法(只允许 A-Z a-z 0-9 _ - ,长度1-32)"
+                exit 1
+            fi
+            if userpassUserExists "${config}" "${username}"; then
+                echoColor red "用户已存在"
+                exit 1
+            fi
+            read -rsp "请输入密码(默认随机8位,输入不回显): " password
+            echo ""
+            if [ -z "${password}" ]; then
+                password=$(generate_password)
+                echoColor green "->已为该用户生成随机密码: ${password}"
+            elif ! isValidPassword "${password}"; then
+                echoColor red "密码含不支持字符(只允许 A-Za-z0-9 _ . ~ -)"
+                exit 1
+            fi
+            userpassAddUser "${config}" "${username}" "${password}"
+            echoColor green "添加成功"
+            restart
+            echoColor green "提示:可用菜单8导出该用户的客户端配置"
+            ;;
+        2)
+            read -p "请输入要删除的用户名: " username
+            if ! userpassUserExists "${config}" "${username}"; then
+                echoColor red "用户不存在"
+                exit 1
+            fi
+            local count
+            count=$(userpassCountUsers "${config}")
+            if [ "${count}" -le 1 ]; then
+                echoColor red "至少保留一个用户,无法删除最后一个"
+                exit 1
+            fi
+            userpassDeleteUser "${config}" "${username}"
+            echoColor green "删除成功"
+            restart
+            ;;
+        3)
+            echoColor purple "当前用户列表:"
+            userpassListUsers "${config}"
+            ;;
+        0) exit 0 ;;
+        *) echoColor red "输入错误!"; exit 1 ;;
+    esac
+}
+
 show_menu() {
     clear
     # Each banner line is exactly 46 visible chars (10*+content+10*+2 pipes).
@@ -3793,6 +3894,7 @@ show_menu() {
     echo -e "$(echoColor skyBlue "13) 查看hysteria2统计信息")"
     echo -e "$(echoColor yellow "14) 查看实时日志")"
     echo -e "$(echoColor yellow "15) 添加socks5出站[支持自动配置warp]")"
+    echo -e "$(echoColor lightMagenta "16) 多用户管理[用户名/密码]")"
 
     echo -e "$(echoColor purple "###############################")"
 
@@ -3829,6 +3931,7 @@ menu() {
             13) getHysteriaTrafic; wait_for_continue ;;
             14) checkLogs; exit 0 ;;
             15) addSocks5Outbound; exit 0 ;;
+            16) userControl; exit 0 ;;
             0) exit 0 ;;
             *) echoColor red "Input Error !!!"; wait_for_continue ;;
         esac
@@ -3853,6 +3956,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
         getHysteriaTrafic|13) echoColor purple "-> 13) 查看hysteria统计信息"; getHysteriaTrafic ;;
         checkLogs|14) echoColor purple "-> 14) 查看实时日志"; checkLogs ;;
         addSocks5Outbound|15) echoColor purple "-> 15) 添加socks5出站"; addSocks5Outbound ;;
+        userControl|16) echoColor purple "-> 16) 多用户管理"; userControl ;;
         cronTask) cronTask ;;
         *) menu ;;
     esac
