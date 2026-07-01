@@ -901,6 +901,39 @@ isValidPassword() {
     [[ "$p" =~ ^[A-Za-z0-9_.~-]{1,64}$ ]]
 }
 
+# ---- userpass (multi-user auth) helpers -------------------------------------
+# All take an explicit config file path (testable) and use strenv() so a
+# username/password can never inject into the yq expression.
+
+userpassListUsers() {
+    yq eval '.auth.userpass | keys | .[]' "$1"
+}
+
+userpassCountUsers() {
+    yq eval '.auth.userpass | length' "$1"
+}
+
+userpassUserExists() {
+    local file="$1" user="$2" found
+    found=$(U="$user" yq eval '.auth.userpass | has(strenv(U))' "$file")
+    [ "$found" = "true" ]
+}
+
+userpassAddUser() {
+    local file="$1" user="$2" pass="$3"
+    U="$user" P="$pass" yq eval '.auth.userpass[strenv(U)] = strenv(P)' -i "$file"
+}
+
+userpassDeleteUser() {
+    local file="$1" user="$2"
+    U="$user" yq eval 'del(.auth.userpass[strenv(U)])' -i "$file"
+}
+
+getUserPassword() {
+    local file="$1" user="$2"
+    U="$user" yq eval '.auth.userpass[strenv(U)]' "$file"
+}
+
 addOrUpdateYaml() {
     local file=$1
     local keyPath=$2

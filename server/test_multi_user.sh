@@ -68,8 +68,61 @@ test_is_valid_password() {
     assert_false 'isValidPassword ""'           "empty rejected"
 }
 
+make_userpass_config() {
+    local file="$1"
+    cat > "$file" <<'YAML'
+auth:
+  type: userpass
+  userpass:
+    alice: alicepass
+trafficStats:
+  listen: 127.0.0.1:12345
+  secret: traffic-secret-xyz
+YAML
+}
+
+test_userpass_list_and_count() {
+    local f="$TEST_ROOT/config.yaml"; make_userpass_config "$f"
+    assert_equals "alice" "$(userpassListUsers "$f")" "single-user list"
+    assert_equals "1" "$(userpassCountUsers "$f")" "count is 1"
+}
+
+test_userpass_add_and_get() {
+    local f="$TEST_ROOT/config.yaml"; make_userpass_config "$f"
+    userpassAddUser "$f" "bob" "bobpass"
+    assert_equals "bobpass" "$(getUserPassword "$f" bob)" "added user readable"
+    assert_equals "2" "$(userpassCountUsers "$f")" "count is 2 after add"
+}
+
+test_userpass_exists() {
+    local f="$TEST_ROOT/config.yaml"; make_userpass_config "$f"
+    assert_true  'userpassUserExists "'"$f"'" alice'  "alice exists"
+    assert_false 'userpassUserExists "'"$f"'" nobody' "nobody absent"
+}
+
+test_userpass_delete() {
+    local f="$TEST_ROOT/config.yaml"; make_userpass_config "$f"
+    userpassAddUser "$f" "bob" "bobpass"
+    userpassDeleteUser "$f" "alice"
+    assert_equals "null" "$(getUserPassword "$f" alice)" "deleted user gone"
+    assert_equals "bob" "$(userpassListUsers "$f")" "remaining user is bob"
+}
+
+# strenv() must keep nasty password literal and not inject new YAML keys.
+test_userpass_injection_safe() {
+    local f="$TEST_ROOT/config.yaml"; make_userpass_config "$f"
+    userpassAddUser "$f" "carol" 'p") | .hacked = "x'
+    assert_equals 'p") | .hacked = "x' "$(getUserPassword "$f" carol)" "special chars stored literally"
+    assert_equals "null" "$(yq eval '.hacked' "$f")" "no top-level injection"
+}
+
 test_generate_password_shape
 test_is_valid_username
 test_is_valid_password
+test_userpass_list_and_count
+test_userpass_add_and_get
+test_userpass_exists
+test_userpass_delete
+test_userpass_injection_safe
 
 printf 'All multi-user tests passed.\n'
