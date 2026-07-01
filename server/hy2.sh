@@ -1560,13 +1560,26 @@ setHysteriaConfig(){
         upload=""
         echoColor lightYellow "(5-7/13)当前选择的是非 Brutal 模式，已跳过延时与上下行带宽输入，改用拥塞控制器本地配置。"
     fi
-	echoColor green "(8/13)请输入认证口令(默认随机生成UUID作为密码,建议使用强密码;输入不回显):"
-	read -rs auth_secret
+	echoColor green "(8/13)请设置首个用户的用户名(默认user1):"
+	read first_user
+	if [ -z "${first_user}" ]; then
+		first_user="user1"
+	fi
+	if ! isValidUsername "${first_user}"; then
+		echoColor red "->用户名不合法(只允许 A-Z a-z 0-9 _ - ,长度1-32),已改用默认 user1"
+		first_user="user1"
+	fi
+	echoColor green "请设置该用户的密码(默认随机8位,输入不回显):"
+	read -rs first_pass
 	echo ""
-	if [ -z "${auth_secret}" ]; then
-    	auth_secret=$(generate_uuid)
-    fi
-    echo -e "\n->认证口令已设置(已隐藏,完整值保存在 /etc/hihy/conf/config.yaml,可通过菜单查看客户端配置)\n"
+	if [ -z "${first_pass}" ]; then
+		first_pass=$(generate_password)
+	elif ! isValidPassword "${first_pass}"; then
+		echoColor red "->密码含不支持字符(只允许 A-Za-z0-9 _ . ~ -),已改用随机8位密码"
+		first_pass=$(generate_password)
+	fi
+	traffic_secret=$(generate_uuid)
+	echo -e "\n->用户 ${first_user} 已创建(密码已隐藏,可通过菜单8查看客户端配置);后续增删用户请用菜单16\n"
 	echo -e "Tips: 如果使用obfs混淆,抗封锁能力更强,能被识别为未知udp流量。\n但是会增加cpu负载导致峰值速度下降,如果您追求性能且未被针对封锁建议不使用"
 	echo -e "\033[32m(9/13)是否使用salamander进行流量混淆:\n\n\033[0m\033[33m\033[01m1、不使用(推荐)\n2、使用\033[0m\033[32m\n\n输入序号:\033[0m"
 	read obfs_num
@@ -1574,7 +1587,7 @@ setHysteriaConfig(){
 		obfs_status="false"
 	else
 		obfs_status="true"
-		obfs_pass=${auth_secret}
+		obfs_pass=$(generate_uuid)
 	fi
     if [ "${obfs_status}" == "true" ];then
         echo -e "\n->您将使用salamander混淆加密流量\n"
@@ -1685,8 +1698,8 @@ setHysteriaConfig(){
 	else
 		addOrUpdateYaml "$yaml_file" "listen" ":${port}"
 	fi
-    addOrUpdateYaml "$yaml_file" "auth.type" "password"
-	addOrUpdateYaml "$yaml_file" "auth.password" "${auth_secret}"
+    addOrUpdateYaml "$yaml_file" "auth.type" "userpass"
+	userpassAddUser "$yaml_file" "${first_user}" "${first_pass}"
     addOrUpdateYaml "$yaml_file" "ignoreClientBandwidth" "${ignore_client_bandwidth}"
     if [ "${congestion_mode}" != "brutal" ];then
         addOrUpdateYaml "$yaml_file" "congestion.type" "${congestion_type}"
@@ -1873,7 +1886,7 @@ setHysteriaConfig(){
         trafficPort=$((${port} + 1))
     fi
     addOrUpdateYaml "$yaml_file" "trafficStats.listen" "127.0.0.1:${trafficPort}"
-    addOrUpdateYaml "$yaml_file" "trafficStats.secret" "${auth_secret}"
+    addOrUpdateYaml "$yaml_file" "trafficStats.secret" "${traffic_secret}"
     if [ ${block_http3} == "true" ];then
         echo -e "reject(all, udp/443)" > ${acl_file}
     fi

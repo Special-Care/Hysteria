@@ -131,6 +131,19 @@ YAML
     assert_equals "oldsecret" "$(getTrafficStatsSecret "$f")" "falls back to auth.password"
 }
 
+test_setconfig_writes_userpass() {
+    local s="$SCRIPT_DIR/hy2.sh"
+    grep -Fq 'addOrUpdateYaml "$yaml_file" "auth.type" "userpass"' "$s" \
+        || { echo 'FAIL: auth.type not set to userpass' >&2; exit 1; }
+    grep -Fq 'userpassAddUser "$yaml_file"' "$s" \
+        || { echo 'FAIL: first user not written via userpassAddUser' >&2; exit 1; }
+    if grep -Fq 'addOrUpdateYaml "$yaml_file" "auth.type" "password"' "$s"; then
+        echo 'FAIL: legacy auth.type password write still present' >&2; exit 1
+    fi
+    grep -Fq 'addOrUpdateYaml "$yaml_file" "trafficStats.secret" "${traffic_secret}"' "$s" \
+        || { echo 'FAIL: trafficStats.secret not decoupled' >&2; exit 1; }
+}
+
 test_generate_password_shape
 test_is_valid_username
 test_is_valid_password
@@ -141,5 +154,6 @@ test_userpass_delete
 test_userpass_injection_safe
 test_traffic_secret_userpass
 test_traffic_secret_fallback
+test_setconfig_writes_userpass
 
 printf 'All multi-user tests passed.\n'
