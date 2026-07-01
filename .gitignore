@@ -1,0 +1,5 @@
+# Codegraph local index (dev tooling, not part of the project)
+.codegraph/
+
+# Local design docs / implementation plans (not shipped with the installer)
+docs/
