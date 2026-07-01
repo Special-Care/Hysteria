@@ -116,6 +116,21 @@ test_userpass_injection_safe() {
     assert_equals "null" "$(yq eval '.hacked' "$f")" "no top-level injection"
 }
 
+test_traffic_secret_userpass() {
+    local f="$TEST_ROOT/config.yaml"; make_userpass_config "$f"
+    assert_equals "traffic-secret-xyz" "$(getTrafficStatsSecret "$f")" "reads trafficStats.secret"
+}
+
+test_traffic_secret_fallback() {
+    local f="$TEST_ROOT/legacy.yaml"
+    cat > "$f" <<'YAML'
+auth:
+  type: password
+  password: oldsecret
+YAML
+    assert_equals "oldsecret" "$(getTrafficStatsSecret "$f")" "falls back to auth.password"
+}
+
 test_generate_password_shape
 test_is_valid_username
 test_is_valid_password
@@ -124,5 +139,7 @@ test_userpass_add_and_get
 test_userpass_exists
 test_userpass_delete
 test_userpass_injection_safe
+test_traffic_secret_userpass
+test_traffic_secret_fallback
 
 printf 'All multi-user tests passed.\n'

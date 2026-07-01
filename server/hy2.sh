@@ -934,6 +934,17 @@ getUserPassword() {
     U="$user" yq eval '.auth.userpass[strenv(U)]' "$file"
 }
 
+# Traffic-stats API secret. Decoupled from any user password in userpass mode;
+# falls back to auth.password for legacy single-password installs.
+getTrafficStatsSecret() {
+    local file="$1" secret
+    secret=$(getYamlValue "$file" "trafficStats.secret")
+    if [ -z "$secret" ] || [ "$secret" = "null" ]; then
+        secret=$(getYamlValue "$file" "auth.password")
+    fi
+    echo "$secret"
+}
+
 addOrUpdateYaml() {
     local file=$1
     local keyPath=$2
@@ -3255,7 +3266,7 @@ format_bytes() {
 
 getHysteriaTrafic() {
     local api_port=$(getYamlValue "/etc/hihy/conf/backup.yaml" "trafficPort")
-    local secret=$(getYamlValue "/etc/hihy/conf/config.yaml" "auth.password")
+    local secret=$(getTrafficStatsSecret "/etc/hihy/conf/config.yaml")
     
     if [ -n "$secret" ]; then
         CURL_OPTS=(-H "Authorization: $secret")
