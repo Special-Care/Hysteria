@@ -153,6 +153,18 @@ test_usercontrol_wiring() {
     grep -Fq '16) 多用户管理' "$s"          || { echo 'FAIL: show_menu entry 16 missing' >&2; exit 1; }
 }
 
+test_export_mode_aware() {
+    local s="$SCRIPT_DIR/hy2.sh"
+    grep -Fq 'authType=$(getYamlValue "/etc/hihy/conf/config.yaml" "auth.type")' "$s" \
+        || { echo 'FAIL: generate_client_config not mode-aware' >&2; exit 1; }
+    grep -Fq 'auth_secret="${selected_user}:${selected_pass}"' "$s" \
+        || { echo 'FAIL: userpass credential not composed' >&2; exit 1; }
+    grep -Fq 'generateMetaYaml "${auth_secret}" "${userTag}"' "$s" \
+        || { echo 'FAIL: generateMetaYaml not called with args' >&2; exit 1; }
+    grep -Fq 'Hy2-${remarks}${userTag}-v2rayN.yaml' "$s" \
+        || { echo 'FAIL: client filename not user-tagged' >&2; exit 1; }
+}
+
 test_generate_password_shape
 test_is_valid_username
 test_is_valid_password
@@ -165,5 +177,6 @@ test_traffic_secret_userpass
 test_traffic_secret_fallback
 test_setconfig_writes_userpass
 test_usercontrol_wiring
+test_export_mode_aware
 
 printf 'All multi-user tests passed.\n'

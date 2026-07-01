@@ -2830,7 +2830,16 @@ generate_client_config(){
 	serverAddress=$(getYamlValue "/etc/hihy/conf/backup.yaml" "serverAddress")
 	listen_value=$(getYamlValue "/etc/hihy/conf/config.yaml" "listen")
 	port=$(getListenPrimaryPort "${listen_value}")
-	auth_secret=$(getYamlValue "/etc/hihy/conf/config.yaml" "auth.password")
+	authType=$(getYamlValue "/etc/hihy/conf/config.yaml" "auth.type")
+	userTag=""
+	if [ "${authType}" == "userpass" ]; then
+		selected_user=$(selectHysteriaUser) || exit 1
+		selected_pass=$(getUserPassword "/etc/hihy/conf/config.yaml" "${selected_user}")
+		auth_secret="${selected_user}:${selected_pass}"
+		userTag="-${selected_user}"
+	else
+		auth_secret=$(getYamlValue "/etc/hihy/conf/config.yaml" "auth.password")
+	fi
 	tls_sni=$(getYamlValue "/etc/hihy/conf/backup.yaml" "domain")
 	insecure=$(getYamlValue "/etc/hihy/conf/backup.yaml" "insecure")
     masquerade_tcp=$(getYamlValue "/etc/hihy/conf/backup.yaml" "masquerade_tcp")
@@ -2875,7 +2884,7 @@ generate_client_config(){
 		portHoppingMaxHopInterval=$(getBackupValueOrDefault "/etc/hihy/conf/backup.yaml" "portHoppingMaxHopInterval" "30s")
 		serverPortRange="${portHoppingStart}-${portHoppingEnd}"
 	fi
-	client_configfile="./Hy2-${remarks}-v2rayN.yaml"
+	client_configfile="./Hy2-${remarks}${userTag}-v2rayN.yaml"
 	if [ -f "${client_configfile}" ]; then
 		rm -r ${client_configfile}
 	fi
@@ -2949,7 +2958,7 @@ generate_client_config(){
 	if [ "${obfs_status}" == "true" ];then
 		url_base="${url_base}&obfs=salamander&obfs-password=${obfs_pass}"
 	fi
-	url="${url_base}&sni=${tls_sni}#Hy2-${remarks}"
+	url="${url_base}&sni=${tls_sni}#Hy2-${remarks}${userTag}"
 	 # 在生成配置前添加分隔线
     echo -e "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo -e "📝 生成客户端配置文件..."
@@ -2983,15 +2992,17 @@ generate_client_config(){
     echoColor green "↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓COPY↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓"
     cat ${client_configfile}
     echoColor green "↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑COPY↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑"
-    generateMetaYaml
-    
+    generateMetaYaml "${auth_secret}" "${userTag}"
+
     echo -e "\n✅ 配置生成完成!"
     echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
 }
 
 generateMetaYaml(){
+    local meta_credential="$1"
+    local userTag="$2"
     remarks=$(getYamlValue "/etc/hihy/conf/backup.yaml" "remarks")
-    local metaFile="./Hy2-${remarks}-ClashMeta.yaml"
+    local metaFile="./Hy2-${remarks}${userTag}-ClashMeta.yaml"
     if [ -f "${metaFile}" ]; then
         rm -f ${metaFile}
     fi
@@ -3138,7 +3149,7 @@ EOF
 	serverAddress=$(getYamlValue "/etc/hihy/conf/backup.yaml" "serverAddress")
     listen_value=$(getYamlValue "/etc/hihy/conf/config.yaml" "listen")
     port=$(getListenPrimaryPort "${listen_value}")
-	auth_secret=$(getYamlValue "/etc/hihy/conf/config.yaml" "auth.password")
+	auth_secret="${meta_credential:-$(getYamlValue "/etc/hihy/conf/config.yaml" "auth.password")}"
 	tls_sni=$(getYamlValue "/etc/hihy/conf/backup.yaml" "domain")
 	insecure=$(getYamlValue "/etc/hihy/conf/backup.yaml" "insecure")
     masquerade_tcp=$(getYamlValue "/etc/hihy/conf/backup.yaml" "masquerade_tcp")
