@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euo
+set -eu
 
 # Set C locale to avoid tr encoding issues on macOS
 export LC_ALL=C
