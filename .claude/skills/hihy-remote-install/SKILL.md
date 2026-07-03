@@ -13,8 +13,11 @@ description: Install Hysteria2 (hihy) on a remote Linux server over SSH. Use whe
 
 ## 前置条件
 
-- 本机有 `screen` 与 `ssh`(macOS 与主流 Linux 自带)。
-- 目标服务器:Linux,root 用户(或有 root 权限),开启密码登录。
+- 运行 agent(发起 SSH)的本机有 `screen` 与 `ssh`(macOS 与主流 Linux 自带)。
+- **Windows 用户**:会话驱动依赖 GNU `screen`,原生 Windows(cmd/PowerShell)与 Git Bash/MSYS2
+  都**没有 `screen`**,无法直接使用。请在 **WSL2**(如 Ubuntu)中运行:`sudo apt install screen`
+  后,skill 与在 Linux 上完全一样使用。Cygwin 需自行安装 `screen`+`openssh` 包,不推荐。
+- 目标服务器:Linux,root 用户(或有 root 权限),开启密码登录。("本机"仅指操作机;目标服务器始终是 Linux。)
 
 ## 会话脚本子命令
 
