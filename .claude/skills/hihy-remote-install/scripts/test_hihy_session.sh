@@ -108,7 +108,7 @@ echo "Welcome to mock server"
 printf 'root@mock:~# '
 IFS= read -r cmd
 echo "Downloading hihy..."
-echo "1、安装Hysteria2"
+echo "1)  安装 hysteria2"
 printf '请选择: '
 IFS= read -r choice
 if [ "$choice" != "1" ]; then
@@ -130,6 +130,9 @@ printf '\033[1;33m直接回车使用默认值: \033[0m'
 IFS= read -r ans
 echo "default-taken:[${ans}]"
 echo "安装成功,请查看下方配置详细信息"
+echo "🔗 2、[通用]分享链接:"
+echo "hysteria2://exampleauth@203.0.113.10:443/"
+echo "安装完毕"
 sleep 30
 MOCK
     chmod +x "${TEST_ROOT}/mock_remote.sh"
@@ -171,7 +174,7 @@ test_full_install_loop() {
 
     bash "$SESSION_SH" send "bash install.sh"
     out="$(wait_for "请选择")" || true
-    assert_contains "$out" "1、安装Hysteria2" "menu appears after install command"
+    assert_contains "$out" "1)  安装 hysteria2" "menu appears after install command"
 
     bash "$SESSION_SH" send "1"
     out="$(wait_for "(1/13)")" || true
@@ -189,6 +192,13 @@ test_full_install_loop() {
 
     out="$(wait_for "安装成功")" || true
     assert_contains "$out" "安装成功,请查看下方配置详细信息" "success marker visible"
+
+    # contract: success marker is not "done" yet - client config prints after it,
+    # so the agent must keep polling until the share link and the true final
+    # marker (安装完毕) appear, instead of reading immediately on 安装成功.
+    out="$(wait_for "安装完毕")" || true
+    assert_contains "$out" "hysteria2://" "client config (share link) appears after success marker"
+    assert_contains "$out" "安装完毕" "final done marker appears"
 
     out="$(bash "$SESSION_SH" read all)"
     assert_contains "$out" "Welcome to mock server" "read all keeps full history"
