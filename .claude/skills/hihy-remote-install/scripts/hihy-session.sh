@@ -7,7 +7,7 @@
 #
 # Usage:
 #   hihy-session.sh start <ip> <ssh_port> <user>
-#   hihy-session.sh read [N|all]       # dump last N lines (default 120) of screen + scrollback
+#   hihy-session.sh read [N|all]       # print last N lines (default 120) of the raw pty log; `all` = whole log
 #   hihy-session.sh send <text>        # type one line + Enter
 #   hihy-session.sh send-secret        # like send, but the line is read from stdin
 #   hihy-session.sh status
@@ -19,8 +19,11 @@ HIHY_SESSION_NAME="${HIHY_SESSION_NAME:-hihy-install}"
 HIHY_SESSION_DIR="${HIHY_SESSION_DIR:-${TMPDIR:-/tmp}/hihy-session.$(id -u)}"
 HIHY_SESSION_CMD="${HIHY_SESSION_CMD:-}"   # test hook: run this instead of ssh
 HIHY_SCROLLBACK="${HIHY_SCROLLBACK:-5000}"
+# HIHY_SCROLLBACK bounds only screen's own in-memory scrollback buffer. `read`
+# tails the raw -L log on disk (see log_file below), which grows unbounded, so
+# `read all` output is NOT limited by HIHY_SCROLLBACK.
 
-hardcopy_file="${HIHY_SESSION_DIR}/screenlog.0"
+log_file="${HIHY_SESSION_DIR}/screenlog.0"
 
 die() { echo "hihy-session: $*" >&2; exit 1; }
 
@@ -41,9 +44,9 @@ cmd_start() {
     chmod 700 "$HIHY_SESSION_DIR"
     # screen opens its -L logfile in append mode, so a leftover file from a
     # previous session would bleed into this one's `read` output.
-    rm -f "$hardcopy_file"
+    rm -f "$log_file"
     # -L (+cd into HIHY_SESSION_DIR) makes screen tee the raw pty byte stream
-    # to "$HIHY_SESSION_DIR/screenlog.0" == $hardcopy_file. `read` tails that
+    # to "$HIHY_SESSION_DIR/screenlog.0" == $log_file. `read` tails that
     # file instead of using `screen ... hardcopy`: this build of screen (the
     # ancient 4.00.03 macOS ships as /usr/bin/screen) silently truncates
     # multi-byte CJK codepoints to their low byte in the hardcopy character
@@ -71,19 +74,37 @@ cmd_start() {
     echo "session '${HIHY_SESSION_NAME}' started"
 }
 
+clean_terminal_noise() {
+    # Strip terminal control noise from the raw pty log before it reaches the
+    # caller. hy2.sh writes all interactive text through echoColor, wrapping it
+    # in CSI/SGR colour sequences (\033[32m ... \033[0m, \033[1;33;40m, ...),
+    # and its countdown() animates with echo -ne "N\b \b", leaving interleaved
+    # digits and bare backspaces in the log. Left in, these corrupt what `read`
+    # surfaces and break line-oriented grepping by callers.
+    #   1. drop CSI/SGR escape sequences (colours, cursor ops)
+    #   2. drop bare backspace (\b, 0x08) and carriage return (\r, 0x0d)
+    # This only rewrites the bytes printed to the caller; the log file itself is
+    # never modified.
+    local esc
+    esc=$(printf '\033')
+    sed "s/${esc}\[[0-9;?]*[a-zA-Z]//g" | tr -d '\010\015'
+}
+
 cmd_read() {
     local lines="${1:-120}"
     session_alive || die "session not running"
-    # $hardcopy_file is screen's own -L logfile (see cmd_start); nothing to
-    # trigger here. It may not exist yet if the session has produced no
-    # output at all, which is a normal state, not a failure.
-    if [ ! -f "$hardcopy_file" ]; then
+    # $log_file is screen's own -L logfile (see cmd_start); nothing to
+    # trigger here. A live session whose log file is still absent is the
+    # normal transient before screen's first flush (see cmd_start) - the
+    # session just started and nothing has hit disk yet - so return empty,
+    # distinct from a missing session (handled above with die/exit 1).
+    if [ ! -f "$log_file" ]; then
         return 0
     fi
     if [ "$lines" = "all" ]; then
-        cat "$hardcopy_file"
+        clean_terminal_noise < "$log_file"
     else
-        tail -n "$lines" "$hardcopy_file"
+        tail -n "$lines" "$log_file" | clean_terminal_noise
     fi
 }
 
