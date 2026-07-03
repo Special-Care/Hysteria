@@ -35,6 +35,18 @@ assert_contains() {
     fi
 }
 
+assert_not_contains() {
+    # assert_not_contains <haystack> <needle> <label>
+    if printf '%s' "$1" | grep -q "$2"; then
+        fail "$3"
+        echo "---- unexpectedly found needle in (last 20 lines) ----"
+        printf '%s\n' "$1" | tail -20
+        echo "------------------------------------------------------"
+    else
+        pass "$3"
+    fi
+}
+
 test_lifecycle() {
     echo "=== test_lifecycle ==="
     export HIHY_SESSION_CMD="sleep 300"
@@ -75,8 +87,12 @@ test_lifecycle() {
 
 write_mock() {
     # Simulates the remote side: ssh password prompt -> shell -> hihy menu
-    # -> first install question -> success marker. Sleeps keep the screen
-    # session alive long enough for the test to read the final output.
+    # -> cert question -> a colored prompt + countdown-style backspace noise
+    # -> an accept-the-default (bare Enter) step -> success marker. The color
+    # and backspace bytes mimic hy2.sh's echoColor/countdown output so the
+    # test exercises cmd_read's terminal-noise cleaning (the brief's original
+    # mock used plain echo and could not). Sleeps keep the screen session
+    # alive long enough for the test to read the final output.
     cat > "${TEST_ROOT}/mock_remote.sh" <<'MOCK'
 #!/bin/bash
 printf "root@203.0.113.10's password: "
@@ -104,6 +120,15 @@ echo "(1/13)请选择证书申请方式:"
 printf '输入序号: '
 IFS= read -r cert
 echo "cert choice: $cert"
+# echoColor-style colored Chinese prompt + a countdown()-style backspace
+# animation. `read` must surface the prompt cleanly with no escape bytes.
+printf '\033[32m(2/13)测试提示\033[0m\n'
+printf '5\b \b4\b \b3\b \b\n'
+# accept-the-default step: prints a prompt, then echoes back whatever line it
+# receives. `send ""` should deliver an empty line, yielding default-taken:[].
+printf '\033[1;33m直接回车使用默认值: \033[0m'
+IFS= read -r ans
+echo "default-taken:[${ans}]"
 echo "安装成功,请查看下方配置详细信息"
 sleep 30
 MOCK
@@ -134,7 +159,10 @@ test_full_install_loop() {
     bash "$SESSION_SH" start >/dev/null 2>&1 || { fail "start with mock"; return; }
     pass "start with mock"
 
-    out="$(wait_for "password:")" || true
+    # widen this first wait to absorb the one-time ~10s log-flush delay on a
+    # freshly started screen session (see cmd_start); the default 15s leaves
+    # thin margin that can flake on a loaded box.
+    out="$(wait_for "password:" 30)" || true
     assert_contains "$out" "password:" "read surfaces password prompt"
 
     printf '%s\n' "s3cret" | bash "$SESSION_SH" send-secret
@@ -150,6 +178,15 @@ test_full_install_loop() {
     assert_contains "$out" "(1/13)请选择证书申请方式" "install step 1 prompt is readable"
 
     bash "$SESSION_SH" send "3"
+    out="$(wait_for "(2/13)测试提示")" || true
+    assert_contains "$out" "(2/13)测试提示" "read strips color codes from prompt"
+    assert_not_contains "$out" "$(printf '\033')" "read output carries no escape bytes"
+
+    # contract: send "" means "just press Enter" (accept the default value)
+    bash "$SESSION_SH" send ""
+    out="$(wait_for "default-taken")" || true
+    assert_contains "$out" "default-taken:\[\]" "send \"\" delivers only Enter (empty default)"
+
     out="$(wait_for "安装成功")" || true
     assert_contains "$out" "安装成功,请查看下方配置详细信息" "success marker visible"
 
@@ -166,7 +203,8 @@ test_wrong_password() {
     export HIHY_SESSION_CMD="bash ${TEST_ROOT}/mock_remote.sh"
 
     bash "$SESSION_SH" start >/dev/null 2>&1 || { fail "start with mock (wrong pw)"; return; }
-    wait_for "password:" >/dev/null || true
+    # 30s to absorb the one-time ~10s first-flush delay (see cmd_start)
+    wait_for "password:" 30 >/dev/null || true
 
     printf '%s\n' "wrong-password" | bash "$SESSION_SH" send-secret
     out="$(wait_for "Permission denied")" || true
