@@ -840,6 +840,17 @@ clearInstallFailureMarker() {
     rm -f "$failure_marker"
 }
 
+# Portable in-place sed: GNU sed uses `-i`, BSD/macOS sed needs `-i ''`.
+# Detect GNU via `sed --version` (BSD sed rejects it). Used so the recovery
+# path's rc.local edits run identically on Linux servers and the macOS dev box.
+sed_inplace() {
+    if sed --version >/dev/null 2>&1; then
+        sed -i "$@"
+    else
+        sed -i '' "$@"
+    fi
+}
+
 recoverPartialInstallState() {
     local root_dir="${1:-$HIHY_ROOT_DIR}"
     local bin_link="${2:-$HIHY_BIN_LINK}"
@@ -854,9 +865,9 @@ recoverPartialInstallState() {
     rm -f "$failure_marker"
 
     if [ -f "$rc_local" ]; then
-        sed -i '/\/etc\/rc\.d\/hihy start/d' "$rc_local"
-        sed -i '/\/etc\/rc\.d\/allow-port start/d' "$rc_local"
-        sed -i '/\/etc\/rc\.d\/port-hopping start/d' "$rc_local"
+        sed_inplace '/\/etc\/rc\.d\/hihy start/d' "$rc_local"
+        sed_inplace '/\/etc\/rc\.d\/allow-port start/d' "$rc_local"
+        sed_inplace '/\/etc\/rc\.d\/port-hopping start/d' "$rc_local"
     fi
 
     rm -f "$bin_link"
