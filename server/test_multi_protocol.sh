@@ -86,10 +86,70 @@ test_absent_key_in_existing_file_does_not_abort_under_errexit() {
     assert_equals "" "$resolved" "getActiveCore with no core key (and no config.yaml) is empty, no abort"
 }
 
+test_singbox_arch_mapping() {
+    assert_equals "amd64" "$(getSingboxArch x86_64)" "x86_64 -> amd64"
+    assert_equals "arm64" "$(getSingboxArch aarch64)" "aarch64 -> arm64"
+    assert_equals "armv7" "$(getSingboxArch armv7l)" "armv7l -> armv7"
+    assert_equals "386" "$(getSingboxArch i686)" "i686 -> 386"
+    if getSingboxArch sparc64 >/dev/null 2>&1; then
+        printf 'ASSERT FAILED: unsupported arch should return non-zero\n' >&2
+        exit 1
+    fi
+}
+
+test_singbox_download_extracts_binary() {
+    reset_state
+    local sb_dir="sing-box-1.13.14-linux-amd64"
+
+    # Mock wget AND curl (downloadToFile prefers wget) to synthesize a release
+    # tarball containing <dir>/sing-box, matching the real archive layout.
+    cat > "$MOCK_BIN/wget" <<EOF
+#!/bin/sh
+out=""
+while [ "\$#" -gt 0 ]; do
+  case "\$1" in
+    -O) out="\$2"; shift 2 ;;
+    -q) shift ;;
+    *) shift ;;
+  esac
+done
+work=\$(mktemp -d)
+mkdir -p "\$work/${sb_dir}"
+printf '#!/bin/sh\necho sing-box version 1.13.14\n' > "\$work/${sb_dir}/sing-box"
+chmod +x "\$work/${sb_dir}/sing-box"
+tar -czf "\$out" -C "\$work" "${sb_dir}"
+rm -rf "\$work"
+EOF
+    cp "$MOCK_BIN/wget" "$MOCK_BIN/curl"
+    chmod +x "$MOCK_BIN/wget" "$MOCK_BIN/curl"
+
+    export HIHY_SINGBOX_VERSION="v1.13.14"
+    local saved_path="$PATH"
+    export PATH="$MOCK_BIN:$PATH"
+
+    # Force the amd64 code path regardless of the dev machine's real arch.
+    getSingboxArch() { printf 'amd64'; }
+
+    if ! downloadSingboxCore >/dev/null 2>&1; then
+        printf 'ASSERT FAILED: downloadSingboxCore should succeed with a valid tarball\n' >&2
+        exit 1
+    fi
+    unset -f getSingboxArch
+    export PATH="$saved_path"
+
+    if [ ! -x "$HIHY_SINGBOX_BIN" ]; then
+        printf 'ASSERT FAILED: sing-box binary should be installed and executable at %s\n' "$HIHY_SINGBOX_BIN" >&2
+        exit 1
+    fi
+    assert_equals "sing-box version 1.13.14" "$("$HIHY_SINGBOX_BIN")" "installed binary should be the extracted one"
+}
+
 test_write_and_read_active_state
 test_active_core_and_protocol_from_file
 test_legacy_hysteria_install_has_no_active_file
 test_clean_system_has_empty_core
 test_absent_key_in_existing_file_does_not_abort_under_errexit
+test_singbox_arch_mapping
+test_singbox_download_extracts_binary
 
 printf 'All multi-protocol state tests passed.\n'
