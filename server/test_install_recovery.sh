@@ -277,75 +277,46 @@ EOF
     export PATH="$ORIGINAL_PATH"
 }
 
-test_yq_download_uses_curl_when_wget_is_missing() {
+test_pinned_yq_download_and_checksum_verification() {
     reset_state
 
-    local apt_log="$TEST_ROOT/apt.log"
-    local chmod_log="$TEST_ROOT/chmod.log"
-    local curl_log="$TEST_ROOT/curl.log"
-    local uname_log="$TEST_ROOT/uname.log"
+    local fixture="$TEST_ROOT/yq-fixture"
+    printf '#!/bin/sh\necho mocked-yq\n' > "$fixture"
+    local expected_sha
+    expected_sha=$(computeSha256 "$fixture")
 
-    cat > "$MOCK_BIN/apt" <<'EOF'
+    local url_log="$TEST_ROOT/yq-url.log"
+    cat > "$MOCK_BIN/wget" <<EOF
 #!/bin/sh
-printf '%s\n' "$*" >> "${APT_LOG:?}"
-EOF
-
-    cat > "$MOCK_BIN/chmod" <<'EOF'
-#!/bin/sh
-printf '%s\n' "$*" >> "${CHMOD_LOG:?}"
-/bin/chmod "$@"
-EOF
-
-    cat > "$MOCK_BIN/uname" <<'EOF'
-#!/bin/sh
-printf 'args=%s\n' "$*" >> "${UNAME_LOG:?}"
-printf 'x86_64\n'
-EOF
-
-    cat > "$MOCK_BIN/curl" <<'EOF'
-#!/bin/sh
-output_path=""
-url=""
-while [ "$#" -gt 0 ]; do
-    case "$1" in
-        -o)
-            output_path="$2"
-            shift 2
-            ;;
-        -fsSL)
-            shift
-            ;;
-        *)
-            url="$1"
-            shift
-            ;;
-    esac
+out=""; url=""
+while [ "\$#" -gt 0 ]; do
+  case "\$1" in
+    -O|-o) out="\$2"; shift 2 ;;
+    -q|-f|-s|-S|-L|-fsSL) shift ;;
+    -*) shift ;;
+    *) url="\$1"; shift ;;
+  esac
 done
-printf '%s\n' "$url" >> "${MOCK_CURL_LOG:?}"
-printf '#!/bin/sh\necho mocked-yq\n' > "$output_path"
+printf '%s\n' "\$url" >> "${url_log}"
+case "\$url" in
+  */checksums) printf 'yq_linux_amd64  %s\n' "${expected_sha}" > "\$out" ;;
+  *) cp "${fixture}" "\$out" ;;
+esac
 EOF
+    cp "$MOCK_BIN/wget" "$MOCK_BIN/curl"
+    chmod +x "$MOCK_BIN/wget" "$MOCK_BIN/curl"
 
-    chmod +x "$MOCK_BIN/apt" "$MOCK_BIN/chmod" "$MOCK_BIN/curl" "$MOCK_BIN/uname"
+    export PATH="$MOCK_BIN:/usr/bin:/bin"
 
-    export APT_LOG="$apt_log"
-    export CHMOD_LOG="$chmod_log"
-    export MOCK_CURL_LOG="$curl_log"
-    export UNAME_LOG="$uname_log"
-    export PATH="$MOCK_BIN"
-
-    if [ -e "$MOCK_BIN/wget" ]; then
-        printf 'ASSERT FAILED: test setup should not provide wget\n' >&2
+    if ! installPinnedYq "amd64" "$HIHY_YQ_BIN"; then
+        printf 'ASSERT FAILED: installPinnedYq should succeed with a matching checksum\n' >&2
         exit 1
     fi
 
-    checkSystemForUpdate
-    export PATH="$ORIGINAL_PATH"
-
-    assert_file_contains "$apt_log" "update" "missing dependencies should still trigger package manager refresh"
-    assert_file_contains "$uname_log" "args=-m" "architecture detection should consult uname"
-    assert_file_contains "$curl_log" "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_" "curl fallback should download yq when wget is unavailable"
-    assert_file_contains "$chmod_log" "+x $HIHY_YQ_BIN" "downloaded yq binary should be marked executable"
     assert_file_contains "$HIHY_YQ_BIN" "mocked-yq" "downloaded yq binary should be written to the configured path"
+    assert_file_contains "$url_log" "/releases/download/v4.44.3/yq_linux_amd64" "installPinnedYq should download the pinned yq version"
+
+    export PATH="$ORIGINAL_PATH"
 }
 
 test_not_installed_state
@@ -358,6 +329,6 @@ test_version_check_ttl_and_lock_guard
 test_show_menu_starts_background_check_after_render
 test_failure_marker_round_trip
 test_firewall_port_range_cleanup
-test_yq_download_uses_curl_when_wget_is_missing
+test_pinned_yq_download_and_checksum_verification
 
 printf 'All install recovery tests passed.\n'
