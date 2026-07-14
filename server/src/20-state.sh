@@ -29,7 +29,7 @@ getActiveValue() {
     local key="$1"
     local active_file="${2:-$HIHY_ACTIVE_FILE}"
     [ -f "$active_file" ] || return 0
-    grep -m1 "^${key}=" "$active_file" | cut -d '=' -f 2-
+    grep -m1 "^${key}=" "$active_file" | cut -d '=' -f 2- || true
 }
 
 getActiveCore() {
@@ -64,3 +64,4 @@ getActiveProtocol() {
     fi
     printf ''
 }
+

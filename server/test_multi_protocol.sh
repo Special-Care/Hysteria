@@ -73,9 +73,23 @@ test_clean_system_has_empty_core() {
     assert_equals "" "$(getActiveProtocol)" "no install => empty protocol"
 }
 
+test_absent_key_in_existing_file_does_not_abort_under_errexit() {
+    reset_state
+    writeActiveState "protocol=vless"   # deliberately no core= key
+    # Under `set -e`+`pipefail`, a bare assignment whose command substitution
+    # returns nonzero aborts the whole script. These must NOT abort.
+    local val
+    val=$(getActiveValue core)
+    assert_equals "" "$val" "absent key in an existing active file yields empty without aborting"
+    local resolved
+    resolved=$(getActiveCore)
+    assert_equals "" "$resolved" "getActiveCore with no core key (and no config.yaml) is empty, no abort"
+}
+
 test_write_and_read_active_state
 test_active_core_and_protocol_from_file
 test_legacy_hysteria_install_has_no_active_file
 test_clean_system_has_empty_core
+test_absent_key_in_existing_file_does_not_abort_under_errexit
 
 printf 'All multi-protocol state tests passed.\n'
