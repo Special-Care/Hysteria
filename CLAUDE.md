@@ -10,7 +10,8 @@ User-facing strings and documentation under `md/` are in **Chinese**. Match that
 
 ## Layout
 
-- `server/hy2.sh` — the monolithic manager script (~3600 lines). All install / uninstall / lifecycle / config / ACL / stats / log / socks5-outbound logic lives here. Installed to `/usr/bin/hihy`.
+- `server/hy2.sh` — the manager script installed to `/usr/bin/hihy`. **Generated artifact — do not hand-edit.** It is built by `server/build.sh`, which concatenates `server/src/*.sh` (lexical order; the `NNN-` prefixes control order, `90-main.sh` last). Edit the module under `server/src/` and run `bash server/build.sh`, then commit both the module and the regenerated `hy2.sh`.
+- `server/src/*.sh` — the source modules for `hy2.sh`. `00-header.sh` (version + `HIHY_*` defaults), `10-core.sh` (legacy Hysteria2 logic), `20-state.sh` (active-protocol state), `30-singbox-core.sh` (sing-box download), `90-main.sh` (top-level dispatcher).
 - `server/install.sh` — small bootstrap downloader. Fetches `hy2.sh` from `$HIHY_HYSTERIA2_URL` to `$HIHY_BIN_LINK`, then `exec`s it. This is what the README's `bash <(curl …)` one-liner runs.
 - `server/test_bootstrap_install.sh`, `server/test_install_recovery.sh` — Bash test harnesses (see Testing).
 - `md/` — Chinese user docs linked from `README.md` (firewall, certificate, masquerade, blacklist, speed, client, issues, logs).
