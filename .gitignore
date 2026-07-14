@@ -1,0 +1,7 @@
+# AI/dev tooling scratch — not part of the hihy installer, never commit
+.codegraph/
+.superpowers/
+
+# Stray design drafts from an unrelated prior session
+docs/superpowers/plans/2026-07-01-multi-user-auth.md
+docs/superpowers/specs/2026-07-01-multi-user-auth-design.md
