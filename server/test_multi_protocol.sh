@@ -40,6 +40,17 @@ assert_file_mode() {
     fi
 }
 
+assert_file_contains() {
+    local path="$1"
+    local expected="$2"
+    local message="$3"
+
+    if ! grep -Fq "$expected" "$path"; then
+        printf 'ASSERT FAILED: %s\nMissing text: %s\nFile: %s\n' "$message" "$expected" "$path" >&2
+        exit 1
+    fi
+}
+
 reset_state() { rm -rf "$HIHY_ROOT_DIR"; }
 
 test_write_and_read_active_state() {
@@ -100,19 +111,23 @@ test_singbox_arch_mapping() {
 test_singbox_download_extracts_binary() {
     reset_state
     local sb_dir="sing-box-1.13.14-linux-amd64"
+    local url_log="$TEST_ROOT/singbox-url.log"
+    : > "$url_log"
 
     # Mock wget AND curl (downloadToFile prefers wget) to synthesize a release
     # tarball containing <dir>/sing-box, matching the real archive layout.
     cat > "$MOCK_BIN/wget" <<EOF
 #!/bin/sh
-out=""
+out=""; url=""
 while [ "\$#" -gt 0 ]; do
   case "\$1" in
-    -O) out="\$2"; shift 2 ;;
-    -q) shift ;;
-    *) shift ;;
+    -O|-o) out="\$2"; shift 2 ;;
+    -q|-fsSL) shift ;;
+    -*) shift ;;
+    *) url="\$1"; shift ;;
   esac
 done
+printf '%s\n' "\$url" >> "${url_log}"
 work=\$(mktemp -d)
 mkdir -p "\$work/${sb_dir}"
 printf '#!/bin/sh\necho sing-box version 1.13.14\n' > "\$work/${sb_dir}/sing-box"
@@ -127,14 +142,20 @@ EOF
     local saved_path="$PATH"
     export PATH="$MOCK_BIN:$PATH"
 
-    # Force the amd64 code path regardless of the dev machine's real arch.
+    # Force the amd64 code path regardless of the dev machine's real arch,
+    # saving the real function so we can restore it (unset -f would delete it
+    # for later tests in this file — bash function overrides aren't scoped).
+    local orig_getSingboxArch
+    orig_getSingboxArch=$(declare -f getSingboxArch)
     getSingboxArch() { printf 'amd64'; }
 
     if ! downloadSingboxCore >/dev/null 2>&1; then
+        eval "$orig_getSingboxArch"
+        export PATH="$saved_path"
         printf 'ASSERT FAILED: downloadSingboxCore should succeed with a valid tarball\n' >&2
         exit 1
     fi
-    unset -f getSingboxArch
+    eval "$orig_getSingboxArch"
     export PATH="$saved_path"
 
     if [ ! -x "$HIHY_SINGBOX_BIN" ]; then
@@ -142,6 +163,7 @@ EOF
         exit 1
     fi
     assert_equals "sing-box version 1.13.14" "$("$HIHY_SINGBOX_BIN")" "installed binary should be the extracted one"
+    assert_file_contains "$url_log" "/releases/download/v1.13.14/${sb_dir}.tar.gz" "download should request the pinned sing-box tarball URL"
 }
 
 test_write_and_read_active_state
