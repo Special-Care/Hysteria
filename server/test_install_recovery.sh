@@ -23,6 +23,7 @@ export HIHY_BIN_LINK="$TEST_BIN/hihy"
 export HIHY_YQ_BIN="$TEST_BIN/yq"
 export HIHY_RC_LOCAL="$TEST_RC_LOCAL"
 export HIHY_PID_FILE="$TEST_PID_FILE"
+export HIHY_SYSCTL_FILE="$TEST_ROOT/99-hihy.conf"
 export printN=""
 
 source "$SCRIPT_DIR/hy2.sh"
@@ -319,6 +320,31 @@ EOF
     export PATH="$ORIGINAL_PATH"
 }
 
+test_singbox_install_detected_as_installed() {
+    reset_state
+    mkdir -p "$HIHY_ROOT_DIR/bin" "$HIHY_ROOT_DIR/conf" "$TEST_ETC/rc.d"
+    touch "$HIHY_ROOT_DIR/bin/sing-box" "$HIHY_ROOT_DIR/conf/config.json" \
+          "$HIHY_ROOT_DIR/conf/backup.yaml" "$HIHY_ROOT_DIR/active" \
+          "$TEST_ETC/rc.d/hihy" "$HIHY_BIN_LINK"
+    assert_equals "installed" "$(classifyInstallState "$HIHY_ROOT_DIR" "$HIHY_BIN_LINK" "$TEST_ETC/init.d/hihy" "$TEST_ETC/rc.d/hihy" "$(getInstallFailureMarker "$HIHY_ROOT_DIR")")" "a complete sing-box install should be detected as installed"
+}
+
+test_recovery_cleans_singbox_artifacts_and_sysctl() {
+    reset_state
+    mkdir -p "$HIHY_ROOT_DIR/bin" "$HIHY_ROOT_DIR/conf" "$TEST_ETC/rc.d"
+    touch "$HIHY_ROOT_DIR/bin/sing-box" "$HIHY_ROOT_DIR/conf/config.json" \
+          "$HIHY_ROOT_DIR/active" "$TEST_ETC/rc.d/hihy" "$HIHY_BIN_LINK"
+    printf 'net.ipv4.tcp_congestion_control=bbr\n' > "$HIHY_SYSCTL_FILE"
+    markInstallFailed "download" "network error"
+
+    recoverPartialInstallState "$HIHY_ROOT_DIR" "$HIHY_BIN_LINK" "$TEST_ETC/init.d/hihy" "$TEST_ETC/rc.d/hihy" "$(getInstallFailureMarker "$HIHY_ROOT_DIR")" "$TEST_RC_LOCAL" "$TEST_PID_FILE" "$HIHY_SYSCTL_FILE"
+
+    assert_not_exists "$HIHY_ROOT_DIR/conf/config.json" "recovery should remove partial sing-box config"
+    assert_not_exists "$HIHY_ROOT_DIR/bin/sing-box" "recovery should remove partial sing-box binary"
+    assert_not_exists "$HIHY_ROOT_DIR/active" "recovery should remove the active state file"
+    assert_not_exists "$HIHY_SYSCTL_FILE" "recovery should remove the hihy sysctl file"
+}
+
 test_not_installed_state
 test_partial_state_detection_and_recovery
 test_installed_state_detection
@@ -330,5 +356,7 @@ test_show_menu_starts_background_check_after_render
 test_failure_marker_round_trip
 test_firewall_port_range_cleanup
 test_pinned_yq_download_and_checksum_verification
+test_singbox_install_detected_as_installed
+test_recovery_cleans_singbox_artifacts_and_sysctl
 
 printf 'All install recovery tests passed.\n'

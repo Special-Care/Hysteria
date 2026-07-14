@@ -758,8 +758,11 @@ classifyInstallState() {
     local failure_marker="${5:-$(getInstallFailureMarker "$root_dir")}"
     local owned_paths=(
         "$root_dir/bin/appS"
+        "$root_dir/bin/sing-box"
         "$root_dir/conf/config.yaml"
+        "$root_dir/conf/config.json"
         "$root_dir/conf/backup.yaml"
+        "$root_dir/active"
         "$service_primary"
         "$service_fallback"
         "$bin_link"
@@ -773,7 +776,7 @@ classifyInstallState() {
         if [ -e "$path" ]; then
             has_any_artifact="true"
             case "$path" in
-                "$root_dir/bin/appS"|"$root_dir/conf/config.yaml"|"$root_dir/conf/backup.yaml")
+                "$root_dir/bin/appS"|"$root_dir/bin/sing-box"|"$root_dir/conf/config.yaml"|"$root_dir/conf/config.json"|"$root_dir/conf/backup.yaml")
                     has_core_assets="true"
                     ;;
                 "$service_primary"|"$service_fallback")
@@ -836,9 +839,12 @@ recoverPartialInstallState() {
     local failure_marker="${5:-$(getInstallFailureMarker "$root_dir")}"
     local rc_local="${6:-$HIHY_RC_LOCAL}"
     local pid_file="${7:-$HIHY_PID_FILE}"
+    local sysctl_file="${8:-$HIHY_SYSCTL_FILE}"
 
     rm -f "$service_primary" "$service_fallback" "$pid_file"
-    rm -f "$root_dir/conf/config.yaml" "$root_dir/conf/backup.yaml"
+    rm -f "$root_dir/conf/config.yaml" "$root_dir/conf/config.json" "$root_dir/conf/backup.yaml"
+    rm -f "$root_dir/bin/sing-box" "$root_dir/active"
+    rm -f "$sysctl_file"
     rm -f "$failure_marker"
 
     if [ -f "$rc_local" ]; then
@@ -2691,6 +2697,12 @@ uninstall() {
         if grep -q "/etc/rc.d/allow-port" /etc/rc.local; then
             sed -i '/\/etc\/rc.d\/allow-port start/d' /etc/rc.local
         fi
+    fi
+
+    # Remove the hihy sysctl drop-in (kernel CC for TCP protocols) and reload.
+    if [ -f "$HIHY_SYSCTL_FILE" ]; then
+        rm -f "$HIHY_SYSCTL_FILE"
+        sysctl --system >/dev/null 2>&1 || true
     fi
 
     if [ -f "$HIHY_BIN_LINK" ]; then
