@@ -324,7 +324,7 @@ test_singbox_install_detected_as_installed() {
     reset_state
     mkdir -p "$HIHY_ROOT_DIR/bin" "$HIHY_ROOT_DIR/conf" "$TEST_ETC/rc.d"
     touch "$HIHY_ROOT_DIR/bin/sing-box" "$HIHY_ROOT_DIR/conf/config.json" \
-          "$HIHY_ROOT_DIR/conf/backup.yaml" "$HIHY_ROOT_DIR/active" \
+          "$HIHY_ROOT_DIR/active" \
           "$TEST_ETC/rc.d/hihy" "$HIHY_BIN_LINK"
     assert_equals "installed" "$(classifyInstallState "$HIHY_ROOT_DIR" "$HIHY_BIN_LINK" "$TEST_ETC/init.d/hihy" "$TEST_ETC/rc.d/hihy" "$(getInstallFailureMarker "$HIHY_ROOT_DIR")")" "a complete sing-box install should be detected as installed"
 }
