@@ -1,6 +1,6 @@
 #!/bin/bash
 HIHY_BIN_LINK="${HIHY_BIN_LINK:-/usr/bin/hihy}"
-HIHY_HYSTERIA2_URL="${HIHY_HYSTERIA2_URL:-https://raw.githubusercontent.com/Special-Care/Hysteria/refs/heads/main/server/hy2.sh}"
+HIHY_HYSTERIA2_URL="${HIHY_HYSTERIA2_URL:-https://cdn.jsdelivr.net/gh/Special-Care/Hysteria@main/server/hy2.sh}"
 
 downloadHihyScript() {
     local url="$1"
