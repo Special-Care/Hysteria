@@ -108,11 +108,15 @@
 
 ### 拉取安装
 
-以 root 用户在 Bash 中执行：
-
-```bash
+```
+su - root #switch to root user.
 bash <(curl -fsSL https://cdn.jsdelivr.net/gh/Special-Care/Hysteria@main/server/install.sh)
 ```
+
+> 如果 jsDelivr 拉取失败，可以改用 GitHub 源：
+> ```
+> bash <(curl -fsSL https://raw.githubusercontent.com/Special-Care/Hysteria/main/server/install.sh)
+> ```
 
 ### 配置过程
 

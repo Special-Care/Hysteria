@@ -82,7 +82,7 @@ fetchRemoteHeadersFromSources() {
     local response
 
     for url in "$@"; do
-        if response=$(curl -fsSIL --connect-timeout "$HIHY_REMOTE_CONNECT_TIMEOUT" --max-time "$HIHY_REMOTE_MAX_TIME" "$url" 2>/dev/null); then
+        if response=$(curl -fsSI --connect-timeout "$HIHY_REMOTE_CONNECT_TIMEOUT" --max-time "$HIHY_REMOTE_MAX_TIME" "$url" 2>/dev/null); then
             printf '%s' "$response"
             return 0
         fi
@@ -103,16 +103,8 @@ getLatestHihyVersion() {
 getLatestHysteriaVersion() {
     local headers
 
-    headers=$(fetchRemoteHeadersFromSources "https://github.com/HyNetworks/hysteria/releases/latest") || return 1
-    printf '%s\n' "$headers" | awk '
-        tolower($1) == "location:" {
-            url = $2
-            sub(/\r$/, "", url)
-            if (sub(/^.*\/releases\/tag\//, "", url) && url ~ /^app\/v[0-9][0-9A-Za-z.+-]*$/)
-                tag = url
-        }
-        END { if (!tag) exit 1; print tag }
-    '
+    headers=$(fetchRemoteHeadersFromSources "https://github.com/apernet/hysteria/releases/latest") || return 1
+    printf '%s\n' "$headers" | grep -i '^location:' | grep -o 'tag/[^[:space:]]*' | sed 's/tag\///;s/\r//;s/ //g' | head -n 1
 }
 
 getLocalHysteriaVersion() {
@@ -1950,7 +1942,7 @@ downloadHysteriaCore(){
     fi
     
     local arch=$(uname -m)
-    local url_base="https://github.com/HyNetworks/hysteria/releases/download/${version}/hysteria-linux-"
+    local url_base="https://github.com/apernet/hysteria/releases/download/${version}/hysteria-linux-"
     local download_url=""
     
     case "$arch" in
